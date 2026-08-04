@@ -2,8 +2,11 @@
 import argparse
 import json
 import random
+import sys
 import time
 import urllib.request
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 def make_features():
@@ -41,9 +44,9 @@ def main():
                 resp.read()
             sent += 1
         except Exception as exc:
-            print(f"请求失败: {exc}")
+            print(f"request failed: {exc}")
         time.sleep(interval)
-    print(f"已发送 {sent} 个请求")
+    print(f"sent {sent} requests")
 
 
 if __name__ == "__main__":
