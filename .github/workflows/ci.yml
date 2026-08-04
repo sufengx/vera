@@ -56,7 +56,17 @@ jobs:
   integration:
     name: Integration Tests (docker-compose)
     runs-on: ubuntu-latest
-    # TODO: 起 docker-compose + 端到端事件写入与检测触发
     steps:
       - uses: actions/checkout@v4
-      - run: echo "integration tests pending"
+      - name: 启动全栈（含全新环境初始化）
+        run: docker compose -f infra/docker-compose/docker-compose.yml up -d --build
+      - name: 等 loadgen 打完流量并落库（30s 压测 + 批量刷新余量）
+        run: sleep 40
+      - name: 断言事件已写入 ClickHouse
+        run: |
+          COUNT=$(curl -s -u default:vera "http://localhost:8123/?query=SELECT+count(*)+FROM+vera.events+FORMAT+CSV")
+          echo "events=$COUNT"
+          [ "$COUNT" -gt 0 ] || { echo "集成测试失败：无事件落库"; exit 1; }
+      - name: 清理环境
+        if: always()
+        run: docker compose -f infra/docker-compose/docker-compose.yml down -v

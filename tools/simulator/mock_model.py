@@ -3,7 +3,7 @@ import json
 import math
 import os
 import random
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class ModelHandler(BaseHTTPRequestHandler):
@@ -34,4 +34,4 @@ class ModelHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(os.environ.get("MOCK_PORT", "9000"))
-    HTTPServer(("0.0.0.0", port), ModelHandler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", port), ModelHandler).serve_forever()

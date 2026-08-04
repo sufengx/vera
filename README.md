@@ -26,7 +26,7 @@
                               └─────────────────────────────┘
 ```
 
-当前已打通并验证**网关 → 事件 → ClickHouse** 全链路：压测流持续写入事件零丢失、单次代理延迟约 1ms；隐私字段（SHA-256 摘要、`full` 脱敏）默认生效；网关单测覆盖事件校验、gzip 批量编码、失败重试与 ClickHouse 认证。detector / rootcause / SDK 处于规划阶段（见[路线图](#路线图)）。
+当前已打通并验证**网关 → 事件 → ClickHouse** 全链路：代理单请求耗时约 0.1ms（benchmark），1000 req/s 压测下请求成功率 100% 且事件零丢失；隐私字段（SHA-256 摘要、`full` 脱敏）默认生效；网关单测覆盖事件校验、gzip 批量编码、失败重试与 ClickHouse 认证；CI 包含 compose 端到端集成测试。detector / rootcause / SDK 处于规划阶段（见[路线图](#路线图)）。
 
 ## 组件
 
@@ -112,6 +112,7 @@ sdk/python             # Python 采集 SDK
 services/detector      # 漂移检测
 services/rootcause     # 根因定位
 tools/simulator        # 模拟模型 + 压测流
+tools/loadtest         # vegeta 负载测试配置
 infra/docker-compose   # 本地编排
 charts/helm            # Kubernetes 部署
 ```
@@ -125,10 +126,6 @@ charts/helm            # Kubernetes 部署
 - [ ] 监控告警与 Kubernetes 部署
 - [ ] LLM 支持：prompt-hash 漂移、token-level 采样
 - [ ] 自动化缓解
-
-## 文档
-
-各组件构建与使用说明见对应目录 README。
 
 ## 许可证
 

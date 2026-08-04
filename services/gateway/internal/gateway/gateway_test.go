@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,6 +88,48 @@ func TestUpstreamDown(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("期望 502, 得到 %d", rec.Code)
+	}
+}
+
+// BenchmarkHandler 测量完整请求路径：转发 + 事件采集 + 入队。
+func BenchmarkHandler(b *testing.B) {
+	up := mockUpstream("0.85", 0.9)
+	defer up.Close()
+	h, events, err := newTestHandler(up.URL)
+	if err != nil {
+		b.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		for range events {
+		}
+	}()
+	defer close(done)
+	const payload = `{"user_id":"u1","price":9.9,"hour":14}`
+	base := httptest.NewRequest(http.MethodPost, "http://gw.test/v1/predict", nil)
+	rec := httptest.NewRecorder()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		req := base.Clone(base.Context())
+		req.Body = io.NopCloser(strings.NewReader(payload))
+		req.ContentLength = int64(len(payload))
+		h.ServeHTTP(rec, req)
+	}
+}
+
+// BenchmarkBuildEvent 测量事件构造开销（转发之外的额外工作）。
+func BenchmarkBuildEvent(b *testing.B) {
+	h := &Handler{cfg: config.Config{ModelName: "ctr", ModelVersion: "v1"}, host: "bench"}
+	req := httptest.NewRequest(http.MethodPost, "http://gw.test/v1/predict",
+		strings.NewReader(`{"price":9.9}`))
+	req.Header.Set("X-Client-ID", "c1")
+	in := []byte(`{"price":9.9}`)
+	out := []byte(`{"prediction":0.85,"confidence":0.9}`)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		h.buildEvent(req, in, out, time.Millisecond)
 	}
 }
 

@@ -1,0 +1,6 @@
+POST http://localhost:8080/v1/predict
+Content-Type: application/json
+X-Model-Name: ctr
+X-Model-Version: v1
+X-Client-ID: load-test
+@body.json
