@@ -4,6 +4,7 @@ package sink
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 type Writer struct {
 	addr   string
 	table  string
+	auth   string // Basic 认证头，未配置时为空
 	client *http.Client
 	queue  <-chan schema.Event
 
@@ -33,7 +35,7 @@ type Writer struct {
 }
 
 // New 创建写入器并启动后台协程。queue 满时由写入方负责丢弃策略。
-func New(addr, db, table string, queue <-chan schema.Event, batchSize int, batchInterval time.Duration, retryMax int) *Writer {
+func New(addr, db, table string, queue <-chan schema.Event, batchSize int, batchInterval time.Duration, retryMax int, user, pass string) *Writer {
 	w := &Writer{
 		addr:          addr,
 		table:         db + "." + table,
@@ -42,6 +44,9 @@ func New(addr, db, table string, queue <-chan schema.Event, batchSize int, batch
 		batchSize:     batchSize,
 		batchInterval: batchInterval,
 		retryMax:      retryMax,
+	}
+	if user != "" {
+		w.auth = "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
 	}
 	go w.loop()
 	return w
@@ -90,6 +95,9 @@ func (w *Writer) flush(batch []schema.Event) {
 		return
 	}
 	req.Header.Set("Content-Encoding", "gzip")
+	if w.auth != "" {
+		req.Header.Set("Authorization", w.auth)
+	}
 	for i := 0; ; i++ {
 		resp, err := w.client.Do(req)
 		if err == nil {

@@ -19,7 +19,7 @@ import (
 func main() {
 	cfg := config.Load()
 	queue := make(chan schema.Event, cfg.QueueSize)
-	sw := sink.New(cfg.ClickHouse, cfg.DB, cfg.Table, queue, cfg.BatchSize, cfg.BatchInterval, cfg.RetryMax)
+	sw := sink.New(cfg.ClickHouse, cfg.DB, cfg.Table, queue, cfg.BatchSize, cfg.BatchInterval, cfg.RetryMax, cfg.ClickHouseUser, cfg.ClickHousePass)
 	h, err := gateway.New(cfg, queue)
 	if err != nil {
 		log.Fatalf("初始化失败: %v", err)

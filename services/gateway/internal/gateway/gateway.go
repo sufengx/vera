@@ -73,7 +73,7 @@ func (h *Handler) buildEvent(r *http.Request, in, out []byte, dur time.Duration)
 	pred, conf := parsePrediction(out)
 	ev := schema.Event{
 		EventID:          schema.NewEventID(),
-		Timestamp:        time.Now().UTC(),
+		Timestamp:        schema.CHTime(time.Now().UTC()),
 		RequestID:        firstNonEmpty(r.Header.Get("X-Request-ID"), schema.NewEventID()),
 		ModelName:        firstNonEmpty(r.Header.Get("X-Model-Name"), h.cfg.ModelName),
 		ModelVersion:     firstNonEmpty(r.Header.Get("X-Model-Version"), h.cfg.ModelVersion),

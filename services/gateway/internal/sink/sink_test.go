@@ -19,7 +19,7 @@ func validEvents(n int) []schema.Event {
 	for i := range evs {
 		evs[i] = schema.Event{
 			EventID:          schema.NewEventID(),
-			Timestamp:        time.Now(),
+			Timestamp:        schema.CHTime(time.Now()),
 			RequestID:        "req",
 			ModelName:        "ctr",
 			ModelVersion:     "v1",
@@ -48,7 +48,7 @@ func TestFlushEncoding(t *testing.T) {
 	defer srv.Close()
 
 	queue := make(chan schema.Event, 64)
-	w := New(srv.URL, "vera", "events", queue, 500, time.Hour, 0)
+	w := New(srv.URL, "vera", "events", queue, 500, time.Hour, 0, "", "")
 	w.flush(validEvents(3))
 	body := <-ch
 	lines := strings.Split(strings.TrimSpace(body), "\n")
@@ -64,6 +64,22 @@ func TestFlushEncoding(t *testing.T) {
 	}
 }
 
+func TestBasicAuth(t *testing.T) {
+	got := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	queue := make(chan schema.Event, 8)
+	w := New(srv.URL, "vera", "events", queue, 500, time.Hour, 0, "default", "secret")
+	w.flush(validEvents(1))
+	if auth := <-got; auth != "Basic ZGVmYXVsdDpzZWNyZXQ=" {
+		t.Fatalf("认证头不符: %q", auth)
+	}
+}
+
 func TestRetryThenSuccess(t *testing.T) {
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +92,7 @@ func TestRetryThenSuccess(t *testing.T) {
 	defer srv.Close()
 
 	queue := make(chan schema.Event, 8)
-	w := New(srv.URL, "vera", "events", queue, 500, time.Hour, 3)
+	w := New(srv.URL, "vera", "events", queue, 500, time.Hour, 3, "", "")
 	w.flush(validEvents(1))
 	if n.Load() != 2 {
 		t.Fatalf("期望 2 次尝试, 得到 %d", n.Load())
@@ -95,7 +111,7 @@ func TestFlushOnInterval(t *testing.T) {
 	defer srv.Close()
 
 	queue := make(chan schema.Event, 8)
-	New(srv.URL, "vera", "events", queue, 500, 50*time.Millisecond, 0)
+	New(srv.URL, "vera", "events", queue, 500, 50*time.Millisecond, 0, "", "")
 	queue <- validEvents(1)[0]
 	select {
 	case <-written:

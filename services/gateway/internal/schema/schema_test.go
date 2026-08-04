@@ -10,7 +10,7 @@ import (
 func validEvent() Event {
 	return Event{
 		EventID:          NewEventID(),
-		Timestamp:        time.Now(),
+		Timestamp:        CHTime(time.Now()),
 		RequestID:        "req-1",
 		ModelName:        "ctr",
 		ModelVersion:     "v1",
@@ -36,7 +36,7 @@ func TestValidateMissingField(t *testing.T) {
 	}{
 		{"event_id 为空", func(e *Event) { e.EventID = "" }},
 		{"event_id 非 UUID", func(e *Event) { e.EventID = "x" }},
-		{"timestamp 为空", func(e *Event) { e.Timestamp = time.Time{} }},
+		{"timestamp 为空", func(e *Event) { e.Timestamp = CHTime{} }},
 		{"request_id 为空", func(e *Event) { e.RequestID = "" }},
 		{"model_name 为空", func(e *Event) { e.ModelName = "" }},
 		{"model_version 为空", func(e *Event) { e.ModelVersion = "" }},
@@ -61,13 +61,13 @@ func TestValidateMissingField(t *testing.T) {
 func TestMarshalJSON(t *testing.T) {
 	ts := time.Date(2026, 8, 4, 12, 34, 56, 789000000, time.UTC)
 	e := validEvent()
-	e.Timestamp = ts
+	e.Timestamp = CHTime(ts)
 	b, err := json.Marshal(e)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if !strings.Contains(s, `"timestamp":"2026-08-04T12:34:56.789Z"`) {
+	if !strings.Contains(s, `"timestamp":"2026-08-04 12:34:56.789"`) {
 		t.Fatalf("时间格式不符: %s", s)
 	}
 	if !strings.Contains(s, `"privacy_mask_level":"full"`) {

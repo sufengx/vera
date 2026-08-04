@@ -9,6 +9,8 @@ services:
       - ch-data:/var/lib/clickhouse
     environment:
       CLICKHOUSE_DB: vera
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
     ulimits:
       nofile:
         soft: 262144
@@ -27,6 +29,8 @@ services:
     environment:
       GATEWAY_UPSTREAM: http://model-mock:9000
       CLICKHOUSE_ADDR: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
       CLICKHOUSE_DB: vera
       MODEL_NAME: ctr
       MODEL_VERSION: v1

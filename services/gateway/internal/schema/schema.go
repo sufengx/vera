@@ -4,9 +4,9 @@ package schema
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -19,28 +19,46 @@ func NewEventID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// CHTime 毫秒精度时间戳，JSON 输出兼容 ClickHouse JSONEachRow 解析。
+type CHTime time.Time
+
+// MarshalJSON 输出 UTC 毫秒精度、空格分隔且无时区后缀的字符串。
+func (t CHTime) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + time.Time(t).UTC().Format("2006-01-02 15:04:05.000") + `"`), nil
+}
+
+// UnmarshalJSON 解析对应格式的时间字符串。
+func (t *CHTime) UnmarshalJSON(b []byte) error {
+	ts, err := time.Parse("2006-01-02 15:04:05.000", strings.Trim(string(b), `"`))
+	if err != nil {
+		return err
+	}
+	*t = CHTime(ts)
+	return nil
+}
+
 // Event 记录一次推理请求的观测数据。
 // 隐私约定：只携带摘要与哈希，不携带原文。
 type Event struct {
-	EventID           string     `json:"event_id"`
-	Timestamp         time.Time  `json:"timestamp"`
-	RequestID         string     `json:"request_id"`
-	ModelName         string     `json:"model_name"`
-	ModelVersion      string     `json:"model_version"`
-	Route             string     `json:"route"`
-	ClientID          string     `json:"client_id"`
-	InputSummaryHash  string     `json:"input_summary_hash"`
-	InputFeatures     string     `json:"input_features,omitempty"`
-	InputEmbeddingRef string     `json:"input_embedding_ref,omitempty"`
-	Prediction        string     `json:"prediction"`
-	Confidence        float64    `json:"confidence"`
-	LatencyMs         float64    `json:"latency_ms"`
-	ServerHostname    string     `json:"server_hostname"`
-	ContainerID       string     `json:"container_id"`
-	Label             *string    `json:"label,omitempty"`
-	LabelTimestamp    *time.Time `json:"label_timestamp,omitempty"`
-	SamplingFlag      bool       `json:"sampling_flag"`
-	PrivacyMaskLevel  string     `json:"privacy_mask_level"`
+	EventID           string  `json:"event_id"`
+	Timestamp         CHTime  `json:"timestamp"`
+	RequestID         string  `json:"request_id"`
+	ModelName         string  `json:"model_name"`
+	ModelVersion      string  `json:"model_version"`
+	Route             string  `json:"route"`
+	ClientID          string  `json:"client_id"`
+	InputSummaryHash  string  `json:"input_summary_hash"`
+	InputFeatures     string  `json:"input_features,omitempty"`
+	InputEmbeddingRef string  `json:"input_embedding_ref,omitempty"`
+	Prediction        string  `json:"prediction"`
+	Confidence        float64 `json:"confidence"`
+	LatencyMs         float64 `json:"latency_ms"`
+	ServerHostname    string  `json:"server_hostname"`
+	ContainerID       string  `json:"container_id"`
+	Label             *string `json:"label,omitempty"`
+	LabelTimestamp    *CHTime `json:"label_timestamp,omitempty"`
+	SamplingFlag      bool    `json:"sampling_flag"`
+	PrivacyMaskLevel  string  `json:"privacy_mask_level"`
 }
 
 // 隐私脱敏级别。
@@ -50,18 +68,9 @@ const (
 	MaskFull    = "full"
 )
 
-// MarshalJSON 将时间输出为毫秒精度 ISO8601，兼容 ClickHouse JSONEachRow。
-func (e Event) MarshalJSON() ([]byte, error) {
-	type alias Event
-	a := alias(e)
-	if !a.Timestamp.IsZero() {
-		a.Timestamp = a.Timestamp.UTC().Truncate(time.Millisecond)
-	}
-	if a.LabelTimestamp != nil {
-		t := a.LabelTimestamp.UTC().Truncate(time.Millisecond)
-		a.LabelTimestamp = &t
-	}
-	return json.Marshal(a)
+// IsZero 判断时间是否为零值。
+func (t CHTime) IsZero() bool {
+	return time.Time(t).IsZero()
 }
 
 // Validate 校验必填字段与格式。
