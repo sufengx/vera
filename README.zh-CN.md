@@ -95,9 +95,6 @@ ClickHouse 存储
 
 已验证：
 
-* 网关基准延迟：额外开销约 0.1ms
-* 1000 req/s 压测：100% 请求成功率
-* 压测期间零事件丢失
 * 默认启用基于 SHA-256 的隐私保护
 * gzip 批量编码
 * 失败事件重试机制
@@ -113,6 +110,26 @@ ClickHouse 存储
 * 自动化修复
 
 参见[路线图](#路线图)。
+
+---
+
+# 基准测试
+
+网关基准（2026-08）：
+
+| Benchmark             | 延迟        | 说明                             |
+| --------------------- | ----------- | -------------------------------- |
+| `BenchmarkHandler`    | 120.7µs/op  | 完整代理路径，含事件采集         |
+| `BenchmarkBuildEvent` | 2.2µs/op    | 仅事件采集开销                   |
+
+负载测试（vegeta，见 `tools/loadtest`）：
+
+| 场景 | 速率       | 时长 | 请求数   | 成功率 | p99   | 事件丢失 |
+| ---- | ---------- | ---- | -------- | ------ | ----- | -------- |
+| A    | 200 req/s  | 30s  | 6,000    | 100%   | 2.4ms | 0        |
+| B    | 1000 req/s | 30s  | 30,000   | 100%   | 3.6ms | 0        |
+
+![负载测试：1000 req/s](assets/img/loadtest-1000rps.png)
 
 ---
 
@@ -187,6 +204,8 @@ curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20F
 | `latency_ms`          | 请求延迟                   |
 | `privacy_mask_level`  | none / partial / full      |
 | `label`               | 可选的延迟反馈             |
+
+![ClickHouse 中的真实事件](assets/img/events.png)
 
 事件异步上报，推理链路不会被存储故障阻塞。
 

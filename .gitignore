@@ -39,3 +39,4 @@ Thumbs.db
 *.log
 results/
 tools/loadtest/*.bin
+tools/loadtest/*.html

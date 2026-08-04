@@ -95,9 +95,6 @@ ClickHouse Storage
 
 Verified:
 
-* Gateway benchmark latency: ~0.1ms additional overhead
-* 1000 req/s stress test: 100% request success rate
-* Zero event loss during benchmark
 * SHA-256 based privacy protection enabled by default
 * gzip batch encoding
 * Failed event retry mechanism
@@ -113,6 +110,26 @@ Current development focus:
 * Automated mitigation
 
 See [Roadmap](#roadmap).
+
+---
+
+# Benchmarks
+
+Gateway benchmarks (2026-08):
+
+| Benchmark             | Latency     | Note                                      |
+| --------------------- | ----------- | ----------------------------------------- |
+| `BenchmarkHandler`    | 120.7µs/op  | Full proxy path, including event collection |
+| `BenchmarkBuildEvent` | 2.2µs/op    | Event collection overhead only            |
+
+Load tests (vegeta, see `tools/loadtest`):
+
+| Scenario | Rate       | Duration | Requests | Success | p99   | Event loss |
+| -------- | ---------- | -------- | -------- | ------- | ----- | ---------- |
+| A        | 200 req/s  | 30s      | 6,000    | 100%    | 2.4ms | 0          |
+| B        | 1000 req/s | 30s      | 30,000   | 100%    | 3.6ms | 0          |
+
+![Load test: 1000 req/s](assets/img/loadtest-1000rps.png)
 
 ---
 
@@ -187,6 +204,8 @@ Important fields:
 | `latency_ms`         | Request latency             |
 | `privacy_mask_level` | none / partial / full       |
 | `label`              | Optional delayed feedback   |
+
+![Events in ClickHouse](assets/img/events.png)
 
 Events are uploaded asynchronously.
 
