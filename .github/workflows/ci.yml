@@ -16,25 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
-      # TODO: gofmt 检查 + go vet
+          go-version: "1.26"
+      - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
-        continue-on-error: true # 组件落地后收紧
-
-  lint-python:
-    name: Lint Python Services
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/detector
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      # TODO: flake8 / ruff 检查
-      - run: python -m pip install --quiet flake8 && python -m flake8 --exit-zero .
-        continue-on-error: true # 组件落地后收紧
 
   test-gateway:
     name: Unit Tests — Gateway
@@ -46,31 +30,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
-      # TODO: go test ./...（schema 校验等）
-      - run: echo "gateway unit tests pending"
+          go-version: "1.26"
+      - run: go test ./...
 
-  test-python:
-    name: Unit Tests — Python
+  lint-python:
+    name: Lint Python Services
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: services/detector
+        working-directory: tools/simulator
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # TODO: pytest
-      - run: echo "python unit tests pending"
+      - run: python -m py_compile mock_model.py send_events.py
 
   build-docker:
     name: Build Docker Images
     runs-on: ubuntu-latest
-    # TODO: 构建 gateway 镜像；merge 到 main 后 push 到 registry
     steps:
       - uses: actions/checkout@v4
-      - run: echo "docker build pending"
+      - run: docker build -t vera/gateway:ci services/gateway
 
   integration:
     name: Integration Tests (docker-compose)
