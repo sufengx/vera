@@ -20,7 +20,7 @@ build/
 # Local tool settings
 .claude/settings.local.json
 
-# 内部文档，不入库
+# Local docs
 docs/
 
 # Env / secrets
