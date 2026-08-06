@@ -2,16 +2,16 @@
  * Vera AI 可观测性大屏 — 单文件实现
  * 技术栈: React 18 + TypeScript + Tailwind v3 + Recharts
  * 布局: 顶部通栏 8% + 三列主体 3:4:3，1920×1080 全屏无滚动
- * 数据: 快照（见 docs/仪表盘要求.txt），后续可换成实时 API
+ * 数据: 每 10s 轮询 /api/（nginx 代理 ClickHouse，同源免 CORS），窗口语义与检测器一致
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css";
 import {
-  Area, AreaChart, CartesianGrid, Line, LineChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import "./index.css";
 
 /* ── 主题常量 ─────────────────────────────────────────── */
 const PURPLE = "#8b5cf6";
@@ -19,6 +19,7 @@ const CYAN = "#06b6d4";
 const RED = "#ef4444";
 const GREEN = "#10b981";
 const GRAY_LINE = "#cbd5e1";
+const GRAY_BAR = "#4b5563";
 const TICK = { fill: "#64748b", fontSize: 11 };
 const TOOLTIP_STYLE = {
   background: "rgba(17,19,24,0.95)",
@@ -27,13 +28,19 @@ const TOOLTIP_STYLE = {
   fontSize: 12,
   color: "#e2e8f0",
 };
+const POLL_MS = 10000;
+const WINDOW = { cur: 5, off: 30, base: 30 }; // 分钟，与检测器默认参数一致
 
-/* ── I18N（保留原仪表盘的中英切换功能） ────────────────── */
+/* ── I18N ─────────────────────────────────────────────── */
 const I18N: Record<string, Record<string, string>> = {
   zh: {
     title: "Vera AI 可观测性与漂移检测平台",
-    alertTitle: "检测到漂移",
-    alertSub: "1个信号行为异常 · 最近扫描 2026-08-06 12:53:00 UTC",
+    statusOk: "系统运行正常",
+    statusOkSub: "所有信号处于正常范围",
+    statusDrift: "检测到漂移",
+    statusDriftSub: "{n}个信号行为异常",
+    waitScan: "等待检测器首轮扫描…",
+    scanAt: "最近扫描",
     overview: "系统概览",
     signalAnalysis: "信号漂移分析",
     trafficTrend: "请求量趋势",
@@ -43,9 +50,13 @@ const I18N: Record<string, Record<string, string>> = {
     abnormalEvents: "异常事件详情",
     viewAll: "查看全部",
     noData: "暂无数据",
+    noEvents: "暂无异常事件",
+    connecting: "正在连接数据源…",
     drift: "漂移",
     normal: "正常",
     threshold: "threshold",
+    currentWin: "当前窗口",
+    baselineWin: "基准窗口",
     metricEvents: "事件量",
     metricP50: "P50延迟",
     metricP99: "P99延迟",
@@ -53,15 +64,19 @@ const I18N: Record<string, Record<string, string>> = {
     helpOverview: "事件量=模型最近一小时处理的请求数；P50/P99=一半/99% 的请求在多长时间内完成；漂移信号=当前有几个行为异常。",
     helpSignals: "系统定期对比模型最近行为和基准行为：绿点=正常；红点=行为偏移超过阈值，会触发告警。",
     helpTraffic: "每分钟模型请求数。陡升陡降可能意味着流量异常或系统故障。",
-    helpDistPred: "模型预测值的分布。当前窗口与基准明显错开即视为行为改变。",
+    helpDistPred: "模型预测值的分布：紫色=当前窗口，灰色=基准窗口。明显错开即视为行为改变。",
     helpDistConf: "模型置信度分布。突然变得过于自信或犹豫也是异常信号。",
     helpLatency: "P50=一半请求在此时间内完成，P99=99% 的请求在此时间内完成。P99 升高说明系统在变慢。",
     helpEvents: "最近触发的漂移事件。",
   },
   en: {
     title: "Vera AI Observability & Drift Detection",
-    alertTitle: "Drift Detected",
-    alertSub: "1 signal behaving abnormally · Last scan 2026-08-06 12:53:00 UTC",
+    statusOk: "System Healthy",
+    statusOkSub: "All signals within normal range",
+    statusDrift: "Drift Detected",
+    statusDriftSub: "{n} signals behaving abnormally",
+    waitScan: "Waiting for the detector's first scan…",
+    scanAt: "Last scan",
     overview: "Overview",
     signalAnalysis: "Signal Drift Analysis",
     trafficTrend: "Traffic Trend",
@@ -71,9 +86,13 @@ const I18N: Record<string, Record<string, string>> = {
     abnormalEvents: "Drift Events",
     viewAll: "View all",
     noData: "No data yet",
+    noEvents: "No abnormal events",
+    connecting: "Connecting to data source…",
     drift: "Drifted",
     normal: "Normal",
     threshold: "threshold",
+    currentWin: "Current",
+    baselineWin: "Baseline",
     metricEvents: "Events",
     metricP50: "P50 Latency",
     metricP99: "P99 Latency",
@@ -81,43 +100,125 @@ const I18N: Record<string, Record<string, string>> = {
     helpOverview: "Events = requests handled in the last hour; P50/P99 = response speed; Drifted = abnormal signals found.",
     helpSignals: "The system compares recent model behavior against a baseline. Red = behavior shifted beyond threshold, alert fired.",
     helpTraffic: "Requests per minute. Sharp spikes or drops may indicate unusual load or faults.",
-    helpDistPred: "Model prediction distribution. Clear separation from baseline means behavior change.",
+    helpDistPred: "Model prediction distribution: purple = current window, gray = baseline. Clear separation means behavior change.",
     helpDistConf: "Model confidence distribution. Sudden over-confidence or hesitation is a warning sign.",
     helpLatency: "P50 = half of requests complete within this time; P99 = 99% do. A rising P99 means the system is slowing.",
     helpEvents: "Recently fired drift events.",
   },
 };
 
-/* ── 快照数据（与 2026-08-06 12:53 演示环境一致） ──────── */
-const TRAFFIC = [
-  { t: "12:47:00", n: 180 },
-  { t: "12:47:30", n: 420 },
-  { t: "12:48:00", n: 760 },
-  { t: "12:48:30", n: 980 },
-  { t: "12:49:00", n: 1120 },
-  { t: "12:49:30", n: 1145 },
-  { t: "12:50:00", n: 1130 },
-  { t: "12:50:30", n: 960 },
-  { t: "12:51:00", n: 420 },
-];
-const LATENCY = [
-  { t: "12:47:00", p50: 1.2, p99: 1.9 },
-  { t: "12:47:30", p50: 1.19, p99: 1.84 },
-  { t: "12:48:00", p50: 1.2, p99: 1.72 },
-  { t: "12:48:30", p50: 1.21, p99: 1.63 },
-  { t: "12:49:00", p50: 1.2, p99: 1.57 },
-  { t: "12:49:30", p50: 1.19, p99: 1.54 },
-  { t: "12:50:00", p50: 1.2, p99: 1.58 },
-  { t: "12:50:30", p50: 1.2, p99: 1.64 },
-  { t: "12:51:00", p50: 1.21, p99: 1.68 },
-];
-type Signal = { name: string; score: string; threshold: string; drifted: boolean };
-const SIGNALS: Signal[] = [
-  { name: "latency_ms", score: "0.0001", threshold: "0.05", drifted: true },
-  { name: "confidence", score: "0.1093", threshold: "0.05", drifted: false },
-  { name: "prediction", score: "0.0362", threshold: "0.1", drifted: false },
-];
-const EVENTS = [{ time: "12:53:00", signal: "latency_ms", drifted: true }];
+/* ── 数据层：轮询 ClickHouse（经 nginx /api/ 代理） ─────── */
+type Signal = { metric: string; score: number; threshold: number; drifted: boolean };
+type DistRow = { label: string; current: number; baseline: number };
+type DashData = {
+  ev: number; evPrev: number;
+  p50: number; p99: number; p50Prev: number; p99Prev: number;
+  scanTs: string | null;
+  signals: Signal[];
+  traffic: { t: string; n: number }[];
+  latency: { t: string; p50: number; p99: number }[];
+  driftEvents: { time: string; metric: string }[];
+  distPred: DistRow[]; distConf: DistRow[];
+};
+
+async function ch(sql: string): Promise<any[]> {
+  const resp = await fetch(`/api/?query=${encodeURIComponent(sql)}&default_format=JSON`);
+  if (!resp.ok) throw new Error(`clickhouse ${resp.status}`);
+  const json = await resp.json();
+  return json.data ?? [];
+}
+
+function windowBounds() {
+  const now = Date.now();
+  const fmt = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+  return {
+    curStart: fmt(now - WINDOW.cur * 60000),
+    now: fmt(now),
+    baseStart: fmt(now - (WINDOW.off + WINDOW.base) * 60000),
+    baseEnd: fmt(now - WINDOW.off * 60000),
+  };
+}
+
+function distRows(cur: any[], base: any[]): DistRow[] {
+  const bins = 24;
+  const c = new Array(bins).fill(0);
+  const b = new Array(bins).fill(0);
+  for (const r of cur) {
+    let i = Math.floor(Number(r.v) * bins);
+    if (i >= bins) i = bins - 1;
+    if (i < 0) i = 0;
+    c[i]++;
+  }
+  for (const r of base) {
+    let i = Math.floor(Number(r.v) * bins);
+    if (i >= bins) i = bins - 1;
+    if (i < 0) i = 0;
+    b[i]++;
+  }
+  return Array.from({ length: bins }, (_, i) => ({
+    label: ((i + 0.5) / bins).toFixed(2), current: c[i], baseline: b[i],
+  }));
+}
+
+async function fetchDashboardData(): Promise<DashData> {
+  const w = windowBounds();
+  const [evR, evPrevR, pR, pPrevR, scanR, signalsR, trafficR, latencyR, eventsR,
+         predCur, predBase, confCur, confBase] = await Promise.all([
+    ch("SELECT count() AS c FROM vera.events WHERE timestamp >= now() - INTERVAL 60 MINUTE"),
+    ch("SELECT count() AS c FROM vera.events WHERE timestamp >= now() - INTERVAL 120 MINUTE AND timestamp < now() - INTERVAL 60 MINUTE"),
+    ch("SELECT quantile(0.5)(latency_ms) AS p50, quantile(0.99)(latency_ms) AS p99 FROM vera.events WHERE timestamp >= now() - INTERVAL 60 MINUTE"),
+    ch("SELECT quantile(0.5)(latency_ms) AS p50, quantile(0.99)(latency_ms) AS p99 FROM vera.events WHERE timestamp >= now() - INTERVAL 120 MINUTE AND timestamp < now() - INTERVAL 60 MINUTE"),
+    ch("SELECT max(timestamp) AS t FROM vera.drift_results"),
+    ch("SELECT metric, score, threshold, drifted FROM vera.drift_results WHERE scan_id = (SELECT scan_id FROM vera.drift_results ORDER BY timestamp DESC LIMIT 1)"),
+    ch("SELECT toStartOfMinute(timestamp) AS t, count() AS n FROM vera.events WHERE timestamp >= now() - INTERVAL 15 MINUTE GROUP BY t ORDER BY t"),
+    ch("SELECT toStartOfMinute(timestamp) AS t, quantile(0.5)(latency_ms) AS p50, quantile(0.99)(latency_ms) AS p99 FROM vera.events WHERE timestamp >= now() - INTERVAL 15 MINUTE GROUP BY t ORDER BY t"),
+    ch("SELECT timestamp AS t, metric FROM vera.drift_results WHERE drifted = 1 ORDER BY timestamp DESC LIMIT 8"),
+    ch(`SELECT toFloat64OrNull(prediction) AS v FROM vera.events WHERE timestamp >= '${w.curStart}' AND timestamp < '${w.now}' AND toFloat64OrNull(prediction) IS NOT NULL LIMIT 3000`),
+    ch(`SELECT toFloat64OrNull(prediction) AS v FROM vera.events WHERE timestamp >= '${w.baseStart}' AND timestamp < '${w.baseEnd}' AND toFloat64OrNull(prediction) IS NOT NULL LIMIT 3000`),
+    ch(`SELECT confidence AS v FROM vera.events WHERE timestamp >= '${w.curStart}' AND timestamp < '${w.now}' AND confidence IS NOT NULL LIMIT 3000`),
+    ch(`SELECT confidence AS v FROM vera.events WHERE timestamp >= '${w.baseStart}' AND timestamp < '${w.baseEnd}' AND confidence IS NOT NULL LIMIT 3000`),
+  ]);
+  const hhmm = (t: string) => t.slice(11, 16);
+  return {
+    ev: Number(evR[0]?.c ?? 0),
+    evPrev: Number(evPrevR[0]?.c ?? 0),
+    p50: Number(pR[0]?.p50 ?? 0),
+    p99: Number(pR[0]?.p99 ?? 0),
+    p50Prev: Number(pPrevR[0]?.p50 ?? 0),
+    p99Prev: Number(pPrevR[0]?.p99 ?? 0),
+    scanTs: scanR.length ? String(scanR[0].t).slice(0, 19) : null,
+    signals: signalsR.map((r) => ({
+      metric: String(r.metric),
+      score: Number(r.score),
+      threshold: Number(r.threshold),
+      drifted: Boolean(r.drifted),
+    })),
+    traffic: trafficR.map((r) => ({ t: hhmm(String(r.t)), n: Number(r.n) })),
+    latency: latencyR.map((r) => ({ t: hhmm(String(r.t)), p50: Number(r.p50), p99: Number(r.p99) })),
+    driftEvents: eventsR.map((r) => ({ time: String(r.t).slice(11, 19), metric: String(r.metric) })),
+    distPred: distRows(predCur, predBase),
+    distConf: distRows(confCur, confBase),
+  };
+}
+
+function useDashboardData(intervalMs: number): DashData | null {
+  const [data, setData] = useState<DashData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const d = await fetchDashboardData();
+        if (alive) setData(d);
+      } catch {
+        /* 保留上次数据，下轮重试 */
+      }
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [intervalMs]);
+  return data;
+}
 
 /* ── 小组件 ────────────────────────────────────────────── */
 function GlassCard({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -158,7 +259,7 @@ function MetricCard({ icon, value, label, delta, deltaColor, badge }: {
   return (
     <div className="relative flex flex-col rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-base opacity-80">{icon}</span>
+        <span className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-slate-400">{icon}</span>
         {badge && <span className="h-2 w-2 rounded-full bg-vera-red shadow-[0_0_8px_rgba(239,68,68,0.6)]" />}
       </div>
       <div className="font-mono text-4xl font-bold leading-none text-white">{value}</div>
@@ -169,7 +270,7 @@ function MetricCard({ icon, value, label, delta, deltaColor, badge }: {
 }
 
 function SignalRow({ sig, t }: { sig: Signal; t: (k: string) => string }) {
-  const pct = Math.min((parseFloat(sig.score) / parseFloat(sig.threshold)) * 100, 100);
+  const pct = Math.min((sig.score / Math.max(sig.threshold, 1e-9)) * 100, 100);
   const width = Math.max(pct, 2);
   const barColor = sig.drifted ? RED : GREEN;
   return (
@@ -177,13 +278,13 @@ function SignalRow({ sig, t }: { sig: Signal; t: (k: string) => string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${sig.drifted ? "bg-vera-red shadow-[0_0_8px_rgba(239,68,68,0.5)]" : "bg-vera-green shadow-[0_0_8px_rgba(16,185,129,0.5)]"}`} />
-          <span className="text-sm font-semibold text-slate-100">{sig.name}</span>
+          <span className="text-sm font-semibold text-slate-100">{sig.metric}</span>
         </div>
         <span className={`rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold ${sig.drifted ? "bg-vera-red/15 text-vera-red" : "bg-vera-green/15 text-vera-green"}`}>
           {sig.drifted ? t("drift") : t("normal")}
         </span>
       </div>
-      <div className="mt-3 font-mono text-3xl font-bold leading-none text-white">{sig.score}</div>
+      <div className="mt-3 font-mono text-3xl font-bold leading-none text-white">{sig.score.toFixed(4)}</div>
       <div className="mt-1.5 text-xs text-slate-500">{t("threshold")} {sig.threshold}</div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, background: barColor }} />
@@ -206,7 +307,7 @@ function Clock() {
   );
 }
 
-function EmptyState({ t }: { t: (k: string) => string }) {
+function EmptyState({ text }: { text: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2.5 text-slate-600">
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -214,18 +315,95 @@ function EmptyState({ t }: { t: (k: string) => string }) {
         <path d="M7 15l3-4 3 2 4-6" />
         <line x1="4" y1="20" x2="20" y2="4" strokeDasharray="2 3" />
       </svg>
-      <span className="text-sm">{t("noData")}</span>
+      <span className="text-sm">{text}</span>
     </div>
   );
 }
 
+/* ── 图表组件 ──────────────────────────────────────────── */
+function TrafficChart({ data }: { data: DashData["traffic"] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
+        <defs>
+          <linearGradient id="gradLine" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor={PURPLE} />
+            <stop offset="100%" stopColor={CYAN} />
+          </linearGradient>
+          <linearGradient id="gradFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={PURPLE} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={PURPLE} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
+        <XAxis dataKey="t" tick={TICK} axisLine={false} tickLine={false} minTickGap={40} />
+        <YAxis tick={TICK} axisLine={false} tickLine={false} width={46} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} />
+        <Area type="monotone" dataKey="n" stroke="url(#gradLine)" strokeWidth={2.5} fill="url(#gradFill)" />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function LatencyChart({ data }: { data: DashData["latency"] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
+        <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
+        <XAxis dataKey="t" tick={TICK} axisLine={false} tickLine={false} minTickGap={40} />
+        <YAxis domain={["dataMin - 0.1", "dataMax + 0.1"]} tick={TICK} axisLine={false} tickLine={false} width={46} />
+        <Tooltip contentStyle={TOOLTIP_STYLE} />
+        <Line type="monotone" dataKey="p50" stroke={PURPLE} strokeWidth={2.5} dot={false} />
+        <Line type="monotone" dataKey="p99" stroke={GRAY_LINE} strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function DistChart({ rows, t }: { rows: DistRow[]; t: (k: string) => string }) {
+  if (!rows || rows.every((r) => r.current === 0 && r.baseline === 0)) {
+    return <EmptyState text={t("noData")} />;
+  }
+  const legend = (
+    <span className="flex items-center gap-3 text-[0.7rem] text-slate-400">
+      <span className="flex items-center gap-1.5"><span className="h-1 w-4 rounded" style={{ background: PURPLE }} />{t("currentWin")}</span>
+      <span className="flex items-center gap-1.5"><span className="h-1 w-4 rounded" style={{ background: GRAY_BAR }} />{t("baselineWin")}</span>
+    </span>
+  );
+  return (
+    <>
+      <div className="mb-1 flex justify-end">{legend}</div>
+      <div className="h-[calc(100%-2.2rem)]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
+            <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} minTickGap={50} />
+            <YAxis tick={TICK} axisLine={false} tickLine={false} width={40} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+            <Bar dataKey="current" fill={PURPLE} fillOpacity={0.65} maxBarSize={14} />
+            <Bar dataKey="baseline" fill={GRAY_BAR} fillOpacity={0.7} maxBarSize={14} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </>
+  );
+}
+
 /* ── 三列主体 ──────────────────────────────────────────── */
-function LeftColumn({ t }: { t: (k: string) => string }) {
+function LeftColumn({ t, data }: { t: (k: string) => string; data: DashData }) {
+  const nDrifted = data.signals.filter((s) => s.drifted).length;
+  const fmtDelta = (cur: number, prev: number, digits: number) =>
+    prev > 0 ? `${cur - prev >= 0 ? "+" : ""}${(cur - prev).toFixed(digits)}` : "—";
+  const deltaColor = (cur: number, prev: number) =>
+    prev > 0 ? (cur - prev > 0 ? RED : GREEN) : "#94a3b8";
+  const evDelta = data.evPrev > 0
+    ? `${data.ev - data.evPrev >= 0 ? "+" : ""}${(data.ev - data.evPrev).toLocaleString()}`
+    : "—";
   const metrics = [
-    { icon: "📨", value: "5,687", label: t("metricEvents"), delta: "+5,687", deltaColor: RED },
-    { icon: "⚡", value: "1.2 ms", label: t("metricP50") },
-    { icon: "🎯", value: "1.8 ms", label: t("metricP99") },
-    { icon: "🔍", value: "1", label: t("metricDrift"), badge: true },
+    { icon: "events", value: data.ev.toLocaleString(), label: t("metricEvents"), delta: evDelta, deltaColor: "#94a3b8" },
+    { icon: "p50", value: `${data.p50.toFixed(1)} ms`, label: t("metricP50"), delta: fmtDelta(data.p50, data.p50Prev, 1), deltaColor: deltaColor(data.p50, data.p50Prev) },
+    { icon: "p99", value: `${data.p99.toFixed(1)} ms`, label: t("metricP99"), delta: fmtDelta(data.p99, data.p99Prev, 1), deltaColor: deltaColor(data.p99, data.p99Prev) },
+    { icon: "drift", value: String(nDrifted), label: t("metricDrift"), badge: nDrifted > 0 },
   ];
   return (
     <div className="flex min-h-0 flex-col gap-5">
@@ -240,72 +418,41 @@ function LeftColumn({ t }: { t: (k: string) => string }) {
       <GlassCard className="min-h-0 flex-1">
         <PanelTitle title={t("signalAnalysis")} help={t("helpSignals")} />
         <div className="flex h-[calc(100%-2rem)] flex-col justify-between gap-3">
-          {SIGNALS.map((s) => (
-            <SignalRow key={s.name} sig={s} t={t} />
-          ))}
+          {data.signals.length ? (
+            data.signals.map((s) => <SignalRow key={s.metric} sig={s} t={t} />)
+          ) : (
+            <EmptyState text={t("waitScan")} />
+          )}
         </div>
       </GlassCard>
     </div>
   );
 }
 
-function TrafficChart() {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <AreaChart data={TRAFFIC} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
-        <defs>
-          <linearGradient id="gradLine" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={PURPLE} />
-            <stop offset="100%" stopColor={CYAN} />
-          </linearGradient>
-          <linearGradient id="gradFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={PURPLE} stopOpacity={0.3} />
-            <stop offset="100%" stopColor={PURPLE} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
-        <XAxis dataKey="t" tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis domain={[0, 1200]} tickCount={5} tick={TICK} axisLine={false} tickLine={false} width={46} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} />
-        <Area type="monotone" dataKey="n" stroke="url(#gradLine)" strokeWidth={2.5} fill="url(#gradFill)" />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
-}
-
-function LatencyChart() {
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={LATENCY} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
-        <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
-        <XAxis dataKey="t" tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis domain={[1.2, 1.9]} tickCount={5} tick={TICK} axisLine={false} tickLine={false} width={46} />
-        <Tooltip contentStyle={TOOLTIP_STYLE} />
-        <Line type="monotone" dataKey="p50" stroke={PURPLE} strokeWidth={2.5} dot={false} />
-        <Line type="monotone" dataKey="p99" stroke={GRAY_LINE} strokeWidth={2} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
-function MiddleColumn({ t }: { t: (k: string) => string }) {
+function MiddleColumn({ t, data }: { t: (k: string) => string; data: DashData }) {
   return (
     <div className="grid min-h-0 grid-rows-[3fr_2fr] gap-5">
       <GlassCard className="min-h-0">
         <PanelTitle title={t("trafficTrend")} help={t("helpTraffic")} />
         <div className="h-[calc(100%-2rem)]">
-          <TrafficChart />
+          {data.traffic.length ? <TrafficChart data={data.traffic} /> : <EmptyState text={t("noData")} />}
         </div>
       </GlassCard>
       <div className="grid min-h-0 grid-cols-2 gap-5">
-        <GlassCard className="min-h-0"><PanelTitle title={t("distPred")} help={t("helpDistPred")} /><EmptyState t={t} /></GlassCard>
-        <GlassCard className="min-h-0"><PanelTitle title={t("distConf")} help={t("helpDistConf")} /><EmptyState t={t} /></GlassCard>
+        <GlassCard className="min-h-0">
+          <PanelTitle title={t("distPred")} help={t("helpDistPred")} />
+          <div className="h-[calc(100%-2rem)]"><DistChart rows={data.distPred} t={t} /></div>
+        </GlassCard>
+        <GlassCard className="min-h-0">
+          <PanelTitle title={t("distConf")} help={t("helpDistConf")} />
+          <div className="h-[calc(100%-2rem)]"><DistChart rows={data.distConf} t={t} /></div>
+        </GlassCard>
       </div>
     </div>
   );
 }
 
-function RightColumn({ t }: { t: (k: string) => string }) {
+function RightColumn({ t, data }: { t: (k: string) => string; data: DashData }) {
   return (
     <div className="grid min-h-0 grid-rows-[3fr_2fr] gap-5">
       <GlassCard className="min-h-0">
@@ -320,23 +467,27 @@ function RightColumn({ t }: { t: (k: string) => string }) {
           }
         />
         <div className="h-[calc(100%-2rem)]">
-          <LatencyChart />
+          {data.latency.length ? <LatencyChart data={data.latency} /> : <EmptyState text={t("noData")} />}
         </div>
       </GlassCard>
       <GlassCard className="min-h-0 flex flex-col">
         <PanelTitle title={t("abnormalEvents")} help={t("helpEvents")} />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {EVENTS.map((ev) => (
-            <div key={ev.time} className="mb-2 flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3.5 py-2.5">
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-slate-400">{ev.time}</span>
-                <span className="text-xs text-slate-200">{ev.signal}</span>
+          {data.driftEvents.length ? (
+            data.driftEvents.map((ev) => (
+              <div key={ev.time + ev.metric} className="mb-2 flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3.5 py-2.5">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-xs text-slate-400">{ev.time}</span>
+                  <span className="text-xs text-slate-200">{ev.metric}</span>
+                </div>
+                <span className="rounded-full bg-vera-red/15 px-2 py-0.5 text-[0.65rem] font-semibold text-vera-red">
+                  {t("drift")}
+                </span>
               </div>
-              <span className="rounded-full bg-vera-red/15 px-2 py-0.5 text-[0.65rem] font-semibold text-vera-red">
-                {t("drift")}
-              </span>
-            </div>
-          ))}
+            ))
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-slate-600">{t("noEvents")}</div>
+          )}
         </div>
         <button className="mt-2 self-end text-xs text-slate-500 transition-colors hover:text-slate-300">
           {t("viewAll")} →
@@ -367,32 +518,59 @@ function LangToggle({ lang, setLang }: { lang: string; setLang: (v: "zh" | "en")
   );
 }
 
-function TopBar({ t, lang, setLang }: { t: (k: string) => string; lang: string; setLang: (v: "zh" | "en") => void }) {
+function TopBar({ t, lang, setLang, data }: {
+  t: (k: string) => string; lang: string; setLang: (v: "zh" | "en") => void; data: DashData;
+}) {
+  const nDrifted = data.signals.filter((s) => s.drifted).length;
+  let banner: ReactNode;
+  if (!data.scanTs) {
+    banner = (
+      <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-8 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-slate-500" />
+        <span className="text-sm text-slate-300">{t("waitScan")}</span>
+      </div>
+    );
+  } else if (nDrifted > 0) {
+    banner = (
+      <div className="flex items-center gap-4 rounded-2xl border border-vera-red/30 bg-gradient-to-r from-vera-red/15 via-vera-red/10 to-vera-red/15 px-8 py-2.5 shadow-glowRed">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-vera-red opacity-60" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-vera-red" />
+        </span>
+        <div className="text-left leading-tight">
+          <div className="text-lg font-bold text-white">{t("statusDrift")}</div>
+          <div className="text-xs text-red-200/80">
+            {t("statusDriftSub").replace("{n}", String(nDrifted))} · {t("scanAt")} {data.scanTs} UTC
+          </div>
+        </div>
+      </div>
+    );
+  } else {
+    banner = (
+      <div className="flex items-center gap-4 rounded-2xl border border-vera-green/30 bg-gradient-to-r from-vera-green/10 via-vera-green/[0.06] to-vera-green/10 px-8 py-2.5">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-vera-green opacity-50" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-vera-green" />
+        </span>
+        <div className="text-left leading-tight">
+          <div className="text-lg font-bold text-white">{t("statusOk")}</div>
+          <div className="text-xs text-emerald-200/80">
+            {t("statusOkSub")} · {t("scanAt")} {data.scanTs} UTC
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <header className="z-10 flex h-[8%] min-h-[64px] items-center gap-6 px-6">
-      {/* 左：Logo + 名称 */}
       <div className="flex w-[26%] items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-cyan-400 text-lg font-bold text-white shadow-[0_0_20px_rgba(139,92,246,0.4)]">
           V
         </div>
         <span className="truncate text-lg font-bold tracking-wide text-white">{t("title")}</span>
       </div>
-
-      {/* 中：告警横幅 */}
-      <div className="flex flex-1 justify-center">
-        <div className="flex items-center gap-4 rounded-2xl border border-vera-red/30 bg-gradient-to-r from-vera-red/15 via-vera-red/10 to-vera-red/15 px-8 py-2.5 shadow-glowRed">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-vera-red opacity-60" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-vera-red" />
-          </span>
-          <div className="text-left leading-tight">
-            <div className="text-lg font-bold text-white">{t("alertTitle")}</div>
-            <div className="text-xs text-red-200/80">{t("alertSub")}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* 右：时钟 + 刷新 + 语言切换 */}
+      <div className="flex flex-1 justify-center">{banner}</div>
       <div className="flex w-[26%] items-center justify-end gap-4">
         <Clock />
         <svg className="h-4 w-4 animate-[spin_3s_linear_infinite] text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -408,11 +586,24 @@ function TopBar({ t, lang, setLang }: { t: (k: string) => string; lang: string; 
 /* ── 主组件 ────────────────────────────────────────────── */
 function App() {
   const [lang, setLang] = useState<"zh" | "en">("zh");
+  const data = useDashboardData(POLL_MS);
   const t = (k: string) => I18N[lang][k] ?? k;
+
+  if (!data) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-vera-bg">
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 text-lg font-bold text-white">
+            V
+          </div>
+          <span className="text-sm text-slate-500">{t("connecting")}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-vera-bg font-sans text-slate-200 antialiased">
-      {/* 四角氛围光晕 */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-violet-600/10 blur-3xl" />
         <div className="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-cyan-500/10 blur-3xl" />
@@ -420,12 +611,12 @@ function App() {
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-violet-600/[0.08] blur-3xl" />
       </div>
 
-      <TopBar t={t} lang={lang} setLang={setLang} />
+      <TopBar t={t} lang={lang} setLang={setLang} data={data} />
 
       <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
-        <LeftColumn t={t} />
-        <MiddleColumn t={t} />
-        <RightColumn t={t} />
+        <LeftColumn t={t} data={data} />
+        <MiddleColumn t={t} data={data} />
+        <RightColumn t={t} data={data} />
       </main>
     </div>
   );

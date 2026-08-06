@@ -226,17 +226,51 @@ The inference path is never blocked by storage failures.
 
 # Drift Detection
 
+## What Vera detects
+
 The detector (`services/detector`) periodically compares the current event window against a baseline window and flags signals whose distribution has shifted:
 
-| Signal        | Test  |
-| ------------- | ----- |
-| `prediction`  | PSI   |
-| `confidence`  | KS    |
-| `latency_ms`  | KS    |
+| Signal       | Test | Meaning                                      | Threshold      |
+| ------------ | ---- | -------------------------------------------- | -------------- |
+| `prediction` | PSI  | Distribution of model output values          | PSI > 0.1      |
+| `confidence` | KS   | Distribution of model confidence scores      | p-value < 0.05 |
+| `latency_ms` | KS   | Distribution of response latency             | p-value < 0.05 |
 
-A signal is drifted when its score crosses the threshold. Results are stored in `vera.drift_results` and shown on the dashboard. Window sizes and thresholds are configurable via environment variables (see `infra/docker-compose/docker-compose.yml`).
+A signal is *drifted* when its score crosses the threshold. Results are stored in `vera.drift_results` and shown on the dashboard; drifted signals trigger alerts to a Slack-compatible webhook (`ALERT_WEBHOOK_URL`).
 
-Drifted signals trigger alerts to a Slack-compatible webhook (`ALERT_WEBHOOK_URL`).
+## How it works
+
+* **Window semantics.** The detector keeps a *current window* (the last N minutes of events) and a *baseline window* (an M-minute slice ending K minutes ago). It compares the two every scan cycle. Window sizes are environment variables, so sensitivity is tunable.
+* **KS test (confidence, latency).** Computes the largest distance between the two distributions' cumulative curves; the resulting p-value is the probability that they come from the same distribution. p < 0.05 means the shift is unlikely to be random.
+* **PSI (prediction).** Buckets both distributions into the same bins and sums `(actual - expected) * ln(actual / expected)` per bin. PSI = 0 means identical distributions; > 0.1 is considered a significant shift.
+* **Empty baseline.** If the baseline window has no events yet (e.g. a fresh environment), the signal is recorded as *no drift* instead of being skipped.
+* **Alerting.** Alerts are debounced per metric: one alert per anomaly episode, re-armed only after the signal recovers, plus a cooldown (`ALERT_COOLDOWN_MINUTES`, default 15 min) to avoid flooding.
+
+## Configuration
+
+| Environment variable | Default | Meaning                                  |
+| -------------------- | ------- | ---------------------------------------- |
+| `DETECTOR_CURRENT_MINUTES`  | 5    | Current window length (min)              |
+| `DETECTOR_BASELINE_OFFSET`  | 30   | Baseline window ends 30 min ago          |
+| `DETECTOR_BASELINE_MINUTES` | 30   | Baseline window length (min)             |
+| `DETECTOR_SCAN_INTERVAL`    | 60   | Scan period (seconds)                    |
+| `DETECTOR_KS_THRESHOLD`     | 0.05 | KS p-value threshold                     |
+| `DETECTOR_PSI_THRESHOLD`    | 0.1  | PSI threshold                            |
+| `DETECTOR_MIN_EVENTS`       | 50   | Min events in the current window to test |
+| `ALERT_WEBHOOK_URL`         | —    | Slack-compatible webhook endpoint        |
+| `ALERT_COOLDOWN_MINUTES`    | 15   | Alert cooldown (min)                     |
+
+## Dashboard usage
+
+The big-screen dashboard (`http://localhost:8501`) polls ClickHouse every 10 seconds and updates live:
+
+* **Banner.** Green "System Healthy" / red "Drift Detected" with the number of drifted signals and the last scan time.
+* **Overview cards.** Event count (last hour, with hour-over-hour delta), P50/P99 latency (delta vs previous hour), drifted signal count.
+* **Signal analysis.** Each signal shows its score vs threshold with a progress bar; red = drifted.
+* **Traffic trend** — requests per minute (15 min). **Latency trend** — P50/P99 over time.
+* **Distributions** — current vs baseline histograms of prediction and confidence. Clear separation = behavior change.
+* **Drift events** — most recent drifted signals with timestamps.
+* Hover the ⓘ icon on any panel for a plain-language explanation; the top bar toggles 中文/EN.
 
 ## Drift Demo
 
@@ -247,7 +281,11 @@ docker compose -f infra/docker-compose/docker-compose.yml \
   -f infra/docker-compose/docker-compose.drift-demo.yml up --build
 ```
 
-Open http://localhost:8501: within a few minutes the drifted signals turn red on the dashboard.
+Open http://localhost:8501 and watch the cycle:
+
+1. First ~60 s — everything green, traffic building up.
+2. ~90–120 s — the mock model drifts; `prediction`, `confidence` and `latency_ms` turn red, the banner switches to red and webhook alerts fire.
+3. Later — the baseline window rolls past the drift point and signals recover to green. That is the *new normal*, not a false alarm.
 
 Query drift results directly:
 

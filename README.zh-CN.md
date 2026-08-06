@@ -224,17 +224,51 @@ curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20F
 
 # 漂移检测
 
+## 目前可以检测什么
+
 检测器（`services/detector`）周期性对比当前事件窗口与基准窗口，标记分布发生偏移的信号：
 
-| 信号                  | 方法  |
-| --------------------- | ----- |
-| `prediction`          | PSI   |
-| `confidence`          | KS    |
-| `latency_ms`          | KS    |
+| 信号                  | 方法  | 含义                         | 阈值            |
+| --------------------- | ----- | ---------------------------- | --------------- |
+| `prediction`          | PSI   | 模型输出值的分布             | PSI > 0.1       |
+| `confidence`          | KS    | 模型置信度的分布             | p 值 < 0.05     |
+| `latency_ms`          | KS    | 响应延迟的分布               | p 值 < 0.05     |
 
-当统计量超过阈值即判定漂移。结果写入 `vera.drift_results` 并在仪表盘展示。窗口大小与阈值均可通过环境变量配置（见 `infra/docker-compose/docker-compose.yml`）。
+统计量超过阈值即判定漂移。结果写入 `vera.drift_results` 并在仪表盘展示；漂移信号会通过 Slack 兼容 webhook 发送告警（`ALERT_WEBHOOK_URL`）。
 
-漂移信号会通过 Slack 兼容 webhook 发送告警（`ALERT_WEBHOOK_URL`）。
+## 原理
+
+* **窗口语义。** 检测器维护两个窗口：*当前窗口*（最近 N 分钟的事件）与*基准窗口*（更早 offset 之前的 M 分钟切片），每个扫描周期对比两者。窗口大小均为环境变量，灵敏度可调。
+* **KS 检验（confidence、latency）。** 计算两个分布累计曲线的最大间距，得到 p 值 = 两个分布来自同一分布的概率；p < 0.05 说明偏移不太可能是随机波动。
+* **PSI（prediction）。** 把两个分布按相同分桶累计，逐桶求和 `(实际占比 - 期望占比) × ln(实际占比/期望占比)`。PSI = 0 表示分布完全一致，> 0.1 视为显著偏移。
+* **空基准语义。** 基准窗口还没有事件时（如全新环境），记为*无漂移*而非跳过，保证每轮都有结果。
+* **告警防抖。** 同一指标一次异常期只告警一次，恢复正常后才重新武装；另加冷却期（`ALERT_COOLDOWN_MINUTES`，默认 15 分钟），避免刷屏。
+
+## 配置项
+
+| 环境变量                    | 默认值 | 含义                 |
+| --------------------------- | ------ | -------------------- |
+| `DETECTOR_CURRENT_MINUTES`  | 5      | 当前窗口长度（分钟） |
+| `DETECTOR_BASELINE_OFFSET`  | 30     | 基准窗口结束于 30 分钟前 |
+| `DETECTOR_BASELINE_MINUTES` | 30     | 基准窗口长度（分钟） |
+| `DETECTOR_SCAN_INTERVAL`    | 60     | 扫描周期（秒）       |
+| `DETECTOR_KS_THRESHOLD`     | 0.05   | KS 检验 p 值阈值     |
+| `DETECTOR_PSI_THRESHOLD`    | 0.1    | PSI 阈值             |
+| `DETECTOR_MIN_EVENTS`       | 50     | 当前窗口最小事件数，不足不检测 |
+| `ALERT_WEBHOOK_URL`         | —      | Slack 兼容 webhook 地址 |
+| `ALERT_COOLDOWN_MINUTES`    | 15     | 告警冷却（分钟）     |
+
+## 大屏使用说明
+
+监控大屏（http://localhost:8501）每 10 秒轮询一次 ClickHouse，实时刷新：
+
+* **状态横幅。** 绿色"系统运行正常" / 红色"检测到漂移"，显示异常信号数和最近扫描时间。
+* **概览卡片。** 事件量（最近一小时，含环比差值）、P50/P99 延迟（含与上一小时差值）、漂移信号数。
+* **信号漂移分析。** 每个信号显示 score vs 阈值进度条，红 = 漂移。
+* **请求量趋势** —— 每分钟请求数（15 分钟）。**延迟趋势** —— P50/P99 随时间变化。
+* **分布对比** —— prediction / confidence 的当前窗口 vs 基准窗口直方图，明显错开即行为改变。
+* **异常事件** —— 最近触发的漂移事件。
+* 任意面板悬停 ⓘ 可看通俗解释；顶栏可切换中英文。
 
 ## 漂移演示
 
@@ -245,7 +279,11 @@ docker compose -f infra/docker-compose/docker-compose.yml \
   -f infra/docker-compose/docker-compose.drift-demo.yml up --build
 ```
 
-打开 http://localhost:8501：几分钟内漂移信号会在仪表盘上变红。
+打开 http://localhost:8501 观察完整周期：
+
+1. 前 60 秒左右 —— 全绿，流量逐渐爬升。
+2. 约 90–120 秒 —— 模拟模型发生偏移，`prediction`、`confidence`、`latency_ms` 变红，横幅转红并触发 webhook 告警。
+3. 随后 —— 基准窗口滚过漂移点，信号恢复绿色。那是"新常态"，不是误报。
 
 直接查询漂移结果：
 
