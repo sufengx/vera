@@ -195,6 +195,97 @@ curl -s -X POST http://localhost:8080/v1/predict \
 curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20FORMAT%20CSV"
 ```
 
+已经接了真实模型？直接看[接入真实 AI 模型](#接入真实-ai-模型)。
+
+---
+
+# 接入真实 AI 模型
+
+Vera 无需 SDK、无需改代码。你的模型继续跑在自己的地址上——只需把网关指到它，让推理流量改走网关：
+
+```text
+你的应用 ──► Vera 网关 :8080 ──► 你的模型服务（原样不动）
+```
+
+## 1. 把网关指到你的模型
+
+将 `GATEWAY_UPSTREAM` 设为你的模型服务地址（compose override 或 `.env`）：
+
+```yaml
+# docker-compose.override.yml
+services:
+  gateway:
+    environment:
+      GATEWAY_UPSTREAM: "http://your-model-host:9000"
+```
+
+网关原样转发每个请求（路径、请求头、请求体），现有客户端不用改，只需要把 base URL 换成 `http://<vera-host>:8080`。
+
+## 2. 告诉 Vera 请求的归属（可选请求头）
+
+| 请求头             | 含义                                 |
+| ------------------ | ------------------------------------ |
+| `X-Client-ID`      | 调用方 / 应用（默认取客户端 IP）      |
+| `X-Model-Name`     | 模型标识（默认取 `MODEL_NAME`）       |
+| `X-Model-Version`  | 模型版本（默认取 `MODEL_VERSION`）    |
+| `X-Request-ID`     | 你的请求追踪 ID                       |
+
+## 3. Vera 每次调用记录什么
+
+* 请求体的 SHA-256 哈希——默认不存原始输入。
+* 响应延迟，由网关自行计时。
+* 从上游 **JSON 响应** 中解析 `prediction` 与 `confidence`——这是喂给漂移检测的两个信号，模型请按此格式返回：
+
+```json
+{"prediction": 0.73, "confidence": 0.91}
+```
+
+`prediction` 可以是字符串或数字；`confidence` 是 [0, 1] 的数字。缺失时字段记为空、检测器跳过该信号，延迟漂移仍会监控。
+
+验证事件落库：
+
+```bash
+curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20FORMAT%20CSV"
+```
+
+## 4. 网关配置项
+
+| 环境变量                     | 默认值                 | 含义                     |
+| ---------------------------- | ---------------------- | ------------------------ |
+| `GATEWAY_ADDR`               | `:8080`                | 网关监听地址             |
+| `GATEWAY_UPSTREAM`           | `http://127.0.0.1:9000`| 上游模型服务地址         |
+| `MODEL_NAME`                 | `ctr`                  | 默认模型名（无请求头时） |
+| `MODEL_VERSION`              | `v1`                   | 默认模型版本             |
+| `CLICKHOUSE_ADDR`            | `http://127.0.0.1:8123`| ClickHouse HTTP 地址     |
+| `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | —           | ClickHouse 凭据          |
+| `BATCH_SIZE`                 | 500                    | 每批写入事件数           |
+| `BATCH_INTERVAL`             | 2s                     | 最大攒批间隔             |
+| `RETRY_MAX`                  | 3                      | 写入失败重试次数         |
+| `QUEUE_SIZE`                 | 10000                  | 内存事件队列（满则丢弃） |
+
+## 5. 按你的流量调检测参数
+
+检测器拿当前窗口（最近 N 分钟）对比基准窗口（K 分钟前结束的 M 分钟切片）。调参经验：
+
+* **低流量**（每分钟不足 ~10 条）：拉大窗口，例如 `DETECTOR_CURRENT_MINUTES=30`、`DETECTOR_BASELINE_OFFSET=60`、`DETECTOR_BASELINE_MINUTES=120`，或调低 `DETECTOR_MIN_EVENTS`（默认 50，不足的窗口会跳过）。
+* **有每日周期性**：设 `DETECTOR_BASELINE_OFFSET=1440`，基准窗口即"昨天同一时刻"。
+* **告警灵敏度**：调高 `DETECTOR_KS_THRESHOLD` / `DETECTOR_PSI_THRESHOLD` 更容忍噪声，调低反应更早。
+
+## 6. 接告警
+
+配置一个 Slack 兼容 webhook（Slack Incoming Webhooks，或其他支持 Slack 消息格式的接收端）：
+
+```bash
+# 写在 infra/docker-compose/.env 中（不入库）
+ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXX
+```
+
+告警防抖（一次异常期一条，恢复后重新武装），冷却 15 分钟（`ALERT_COOLDOWN_MINUTES`）。消息格式：`{"text": "[Vera] <metric> drifted: score=..., threshold=..."}`。
+
+## 目前能做什么、不能做什么
+
+开箱即检测 `prediction`（PSI）、`confidence`（KS）、`latency_ms`（KS）的分布漂移，配实时大屏与 webhook 告警。暂不支持：SDK 应用级信号、embedding 漂移、根因分析、prompt/工具调用追踪——见[路线图](#路线图)。
+
 ---
 
 # 事件模型

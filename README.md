@@ -195,6 +195,97 @@ Query collected events:
 curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20FORMAT%20CSV"
 ```
 
+Running a real model already? See [Connecting a Real AI Model](#connecting-a-real-ai-model).
+
+---
+
+# Connecting a Real AI Model
+
+Vera needs no SDK and no code changes. Your model keeps serving on its own URL — you point the gateway at it and route inference traffic through the gateway instead:
+
+```text
+your app ──► Vera Gateway :8080 ──► your model service (unchanged)
+```
+
+## 1. Point the gateway at your model
+
+Set `GATEWAY_UPSTREAM` to your model service (a compose override, or `.env`):
+
+```yaml
+# docker-compose.override.yml
+services:
+  gateway:
+    environment:
+      GATEWAY_UPSTREAM: "http://your-model-host:9000"
+```
+
+The gateway proxies every request verbatim — path, headers and body — so existing clients keep working. Only the base URL changes to `http://<vera-host>:8080`.
+
+## 2. Tell Vera about the request (optional headers)
+
+| Header            | Meaning                                    |
+| ----------------- | ------------------------------------------ |
+| `X-Client-ID`     | Caller / application (default: client IP)  |
+| `X-Model-Name`    | Model identifier (default: `MODEL_NAME`)   |
+| `X-Model-Version` | Model version (default: `MODEL_VERSION`)   |
+| `X-Request-ID`    | Your request trace ID                      |
+
+## 3. What Vera records from each call
+
+* SHA-256 hash of the request body — raw input is never stored by default.
+* Response latency, measured by the gateway itself.
+* `prediction` and `confidence`, parsed from the upstream **JSON response**. These are the two signals that feed drift detection, so return them from your model:
+
+```json
+{"prediction": 0.73, "confidence": 0.91}
+```
+
+`prediction` may be a string or a number; `confidence` a number in [0, 1]. If absent, the fields are recorded empty and skipped by the detector — latency drift is still monitored.
+
+Verify events are landing:
+
+```bash
+curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20FORMAT%20CSV"
+```
+
+## 4. Gateway configuration
+
+| Environment variable | Default                | Meaning                                    |
+| -------------------- | ---------------------- | ------------------------------------------ |
+| `GATEWAY_ADDR`       | `:8080`                | Gateway listen address                     |
+| `GATEWAY_UPSTREAM`   | `http://127.0.0.1:9000`| Upstream model service URL                 |
+| `MODEL_NAME`         | `ctr`                  | Default model name (when no header)        |
+| `MODEL_VERSION`      | `v1`                   | Default model version                      |
+| `CLICKHOUSE_ADDR`    | `http://127.0.0.1:8123`| ClickHouse HTTP endpoint                   |
+| `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | — | ClickHouse credentials             |
+| `BATCH_SIZE`         | 500                    | Events per batch write                     |
+| `BATCH_INTERVAL`     | 2s                     | Max flush interval                         |
+| `RETRY_MAX`          | 3                      | Sink retries before dropping               |
+| `QUEUE_SIZE`         | 10000                  | In-memory event queue (drop when full)     |
+
+## 5. Tune detection to your traffic
+
+The detector compares the current window (last N minutes) against a baseline (M minutes ending K minutes ago). Rules of thumb:
+
+* **Low traffic** (fewer than ~10 events/min): widen the windows, e.g. `DETECTOR_CURRENT_MINUTES=30`, `DETECTOR_BASELINE_OFFSET=60`, `DETECTOR_BASELINE_MINUTES=120`, or lower `DETECTOR_MIN_EVENTS` (default 50 — windows with fewer events are skipped).
+* **Daily seasonality**: set `DETECTOR_BASELINE_OFFSET=1440` so the baseline is the same time yesterday.
+* **Alarm sensitivity**: raise `DETECTOR_KS_THRESHOLD` / `DETECTOR_PSI_THRESHOLD` to tolerate more noise, lower to react earlier.
+
+## 6. Wire alerts
+
+Set a Slack-compatible webhook (Slack Incoming Webhooks, or any receiver speaking the Slack payload format):
+
+```bash
+# in infra/docker-compose/.env — not committed
+ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXX
+```
+
+Alerts are debounced (one per anomaly episode, re-armed on recovery) and cooled down 15 minutes (`ALERT_COOLDOWN_MINUTES`). Payload: `{"text": "[Vera] <metric> drifted: score=..., threshold=..."}`.
+
+## What Vera covers today
+
+Out of the box it detects distribution drift on `prediction` (PSI), `confidence` (KS) and `latency_ms` (KS), with a live dashboard and webhook alerts. Not yet: SDK-based application signals, embedding drift, root-cause analysis, prompt/tool tracing — see [Roadmap](#roadmap).
+
 ---
 
 # Event Model
