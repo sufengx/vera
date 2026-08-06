@@ -33,7 +33,7 @@ Vera 致力于回答一个问题：
 
 - **内建漂移检测**
   - 基于 KS 检验与 PSI 的事件信号漂移引擎。
-  - Webhook 告警与实时 Streamlit 仪表盘。
+  - Webhook 告警与实时大屏仪表盘。
 
 - **企业级架构**
   - 自托管部署。
@@ -106,7 +106,7 @@ ClickHouse 存储
 * 失败事件重试机制
 * ClickHouse 认证支持
 * 漂移检测引擎（KS 检验 / PSI）与 webhook 告警
-* 实时指标与漂移状态的 Streamlit 仪表盘
+* 实时指标与漂移状态的大屏仪表盘
 * 基于 Docker Compose 的集成测试
 
 当前开发重点：
@@ -147,7 +147,7 @@ ClickHouse 存储
 | ---------------------- | ---------------------------------------------------- | ----------- |
 | `services/gateway`     | Go 推理网关：代理 + 事件采集 + 异步 ClickHouse 写入  | ✅ 可用     |
 | `services/detector`    | 漂移检测引擎（事件信号的 KS 检验 / PSI）             | ✅ 可用     |
-| `services/dashboard`   | 中英双语 Streamlit 仪表盘：指标、图表与漂移告警      | ✅ 可用     |
+| `services/dashboard`   | 中英双语 React 大屏仪表盘：指标、图表与漂移告警      | ✅ 可用     |
 | `tools/simulator`      | 模拟模型服务与流量生成器                             | ✅ 可用     |
 | `infra/docker-compose` | 本地开发环境                                         | ✅ 可用     |
 | `sdk/python`           | 应用级信号的 Python SDK                              | 🚧 规划中   |
@@ -176,7 +176,7 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 * `loadgen` - 流量生成器
 * `clickhouse` - 事件存储
 * `detector` - 漂移检测引擎
-* `dashboard` - Streamlit 仪表盘，地址 http://localhost:8501
+* `dashboard` - 监控大屏，地址 http://localhost:8501
 
 测试推理：
 
@@ -266,7 +266,7 @@ docker compose -f infra/docker-compose/docker-compose.yml down -v
 ```text
 services/gateway       # Go 网关（代理 + 事件采集 + ClickHouse 写入）
 services/detector      # 漂移检测引擎
-services/dashboard     # Streamlit 仪表盘
+services/dashboard     # 大屏仪表盘 (React)
 sdk/python             # Python SDK
 services/rootcause     # 根因分析
 tools/simulator        # 模拟模型 + 流量生成器

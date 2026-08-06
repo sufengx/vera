@@ -1,11 +1,12 @@
-FROM python:3.12-slim
+FROM node:20-alpine AS build
 WORKDIR /app
-COPY requirements.txt .
-ARG PIP_INDEX_URL=https://pypi.org/simple
-ENV PIP_INDEX_URL=$PIP_INDEX_URL
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ./
-COPY .streamlit/ .streamlit/
+COPY package.json ./
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm config set registry $NPM_REGISTRY && npm install
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=8501", \
-     "--server.headless=true", "--browser.gatherUsageStats=false"]

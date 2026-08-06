@@ -33,7 +33,7 @@ Whether it is caused by data distribution changes, model degradation, prompt cha
 
 - **Built-in drift detection**
   - KS test and PSI based drift engine over event signals.
-  - Webhook alerting and a live Streamlit dashboard.
+  - Webhook alerting and a big-screen live dashboard.
 
 - **Enterprise-ready architecture**
   - Self-hosted deployment.
@@ -106,7 +106,7 @@ Verified:
 * Failed event retry mechanism
 * ClickHouse authentication support
 * Drift detection engine (KS test / PSI) with webhook alerting
-* Streamlit dashboard for live metrics and drift status
+* Big-screen dashboard for live metrics and drift status
 * Docker Compose based integration testing
 
 Current development focus:
@@ -147,7 +147,7 @@ Load tests (vegeta, see `tools/loadtest`):
 | ---------------------- | ---------------------------------------------------------------------- | ----------- |
 | `services/gateway`     | Go inference gateway: proxy + event collection + async ClickHouse sink | ✅ Available |
 | `services/detector`    | Drift detection engine (KS test / PSI on event signals)                | ✅ Available |
-| `services/dashboard`   | Bilingual (EN/中文) Streamlit dashboard: metrics, charts and drift alerts | ✅ Available |
+| `services/dashboard`   | React big-screen dashboard: bilingual, metrics, charts and drift alerts | ✅ Available |
 | `tools/simulator`      | Mock model service and traffic generator                               | ✅ Available |
 | `infra/docker-compose` | Local development environment                                          | ✅ Available |
 | `sdk/python`           | Python SDK for application-level signals                               | 🚧 Planned  |
@@ -176,7 +176,7 @@ This starts:
 * `loadgen` - traffic generator
 * `clickhouse` - event storage
 * `detector` - drift detection engine
-* `dashboard` - Streamlit dashboard at http://localhost:8501
+* `dashboard` - big-screen dashboard at http://localhost:8501
 
 Test inference:
 
@@ -268,7 +268,7 @@ docker compose -f infra/docker-compose/docker-compose.yml down -v
 ```text
 services/gateway       # Go gateway (proxy + event collection + ClickHouse sink)
 services/detector      # Drift detection engine
-services/dashboard     # Streamlit dashboard
+services/dashboard     # Big-screen dashboard (React)
 sdk/python             # Python SDK
 services/rootcause     # Root cause analysis
 tools/simulator        # Mock model + traffic generator
