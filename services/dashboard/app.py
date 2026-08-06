@@ -37,6 +37,14 @@ I18N = {
         "ch_unreachable": "无法连接 ClickHouse",
         "refresh": "每 10 秒自动刷新",
         "utc": "UTC",
+        "overview": "概览",
+        "help_overview": "四个数字是系统健康速览：事件量=最近一小时模型处理了多少次请求；p50/p99=响应速度（一半 / 99% 的请求在多长时间内完成）；漂移信号=当前发现几个行为异常。小字是相对上一小时的增减。",
+        "help_drift": "系统定期把模型最近几分钟的行为和更早一段时间的正常行为做对比，判断有没有明显变化。绿点=正常；红点=行为变了。分数越大变化越明显，超过阈值就会标红并发送告警。",
+        "help_dist_pred": "把模型的输出画成曲线堆叠：紫色=最近时间段，灰色=基准时间段。两条曲线明显错开，说明模型的输出分布变了——这是判断模型行为是否改变的核心依据。",
+        "help_dist_conf": "和预测值图类似，这里对比的是模型对自己的信心。模型突然变自信或变犹豫，也可能是行为异常的早期信号。",
+        "help_traffic": "每分钟有多少次模型请求。曲线陡升或陡降，可能意味着流量异常、线上活动或者系统故障。",
+        "help_latency": "模型响应速度：p50=一半请求在这时间内完成，p99=99% 的请求在这时间内完成。p99 突然上涨说明系统在变慢，用户会开始感觉到卡顿。",
+        "help_events": "最近收到的模型请求样本。为保护隐私，只记录请求的摘要指纹，不保存原始数据。",
     },
     "en": {
         "title": "Vera — AI Observability Dashboard",
@@ -63,12 +71,29 @@ I18N = {
         "ch_unreachable": "Cannot reach ClickHouse",
         "refresh": "Auto-refresh every 10s",
         "utc": "UTC",
+        "overview": "Overview",
+        "help_overview": "A quick health snapshot: events (1h) = how many requests the model handled in the last hour; p50/p99 = response speed (half / 99% of requests complete within this time); drifted signals = how many abnormal behaviors were found. The small numbers show change vs the previous hour.",
+        "help_drift": "The system periodically compares the model's recent behavior with its past baseline and checks for significant change. Green dot = normal; red dot = behavior has shifted. A higher score means a bigger change; crossing the threshold turns red and fires an alert.",
+        "help_dist_pred": "Model outputs stacked as histograms: purple = recent window, gray = baseline window. Clearly separated curves mean the output distribution has changed — the core evidence of drift.",
+        "help_dist_conf": "Same comparison for the model's confidence. Sudden over-confidence or hesitation can be an early warning sign.",
+        "help_traffic": "Model requests per minute. Sharp spikes or drops may indicate unusual load, a campaign, or a system fault.",
+        "help_latency": "Response speed: p50 = half of requests complete within this time, p99 = 99% do. A rising p99 means the system is slowing down and users may start noticing.",
+        "help_events": "Recent model request samples. Privacy-preserving: only summary fingerprints are stored, never raw data.",
     },
 }
 
 
 def t(key):
     return I18N[st.session_state.lang].get(key, key)
+
+
+def panel(text, help_key):
+    """板块标题 + 问号弹层，弹层里是通俗解释。"""
+    c1, c2 = st.columns([7, 1])
+    c1.subheader(text)
+    with c2:
+        with st.popover("ⓘ"):
+            st.markdown(t(help_key))
 
 
 def client():
@@ -129,6 +154,7 @@ def render_banner(ch):
 
 def render_summary(ch, drifted):
     """四个指标卡：事件量、延迟分位、漂移信号数。"""
+    panel(t("overview"), "help_overview")
     ev1 = one(ch, "SELECT count() FROM vera.events WHERE timestamp >= now() - INTERVAL 60 MINUTE") or 0
     ev0 = one(ch, """SELECT count() FROM vera.events
                      WHERE timestamp >= now() - INTERVAL 120 MINUTE
@@ -148,7 +174,7 @@ def render_summary(ch, drifted):
 
 def render_drift(ch):
     """最新一轮扫描的漂移信号列表。"""
-    st.subheader(t("drift_status"))
+    panel(t("drift_status"), "help_drift")
     df = ch.query_df("""
         SELECT metric, score, threshold, drifted
         FROM vera.drift_results
@@ -181,7 +207,7 @@ def render_distribution(ch):
         cur_df = series(col, *current).assign(window=t("current_win"))
         base_df = series(col, *baseline).assign(window=t("baseline_win"))
         with c1 if col == "prediction" else c2:
-            st.subheader(t(key))
+            panel(t(key), "help_dist_pred" if col == "prediction" else "help_dist_conf")
             if cur_df.empty and base_df.empty:
                 st.caption(t("no_data"))
                 continue
@@ -209,7 +235,7 @@ def render_trends(ch):
     """)
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader(t("traffic"))
+        panel(t("traffic"), "help_traffic")
         if vol.empty:
             st.caption(t("no_data"))
         else:
@@ -219,7 +245,7 @@ def render_trends(ch):
             fig.update_layout(height=280, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, width="stretch")
     with c2:
-        st.subheader(t("latency"))
+        panel(t("latency"), "help_latency")
         if lat.empty:
             st.caption(t("no_data"))
         else:
@@ -233,7 +259,7 @@ def render_trends(ch):
 
 def render_events(ch):
     """最近的事件样本。"""
-    st.subheader(t("recent_events"))
+    panel(t("recent_events"), "help_events")
     df = decode(ch.query_df("""
         SELECT timestamp, model_name, model_version, prediction, confidence,
                latency_ms, input_summary_hash
