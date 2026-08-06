@@ -201,13 +201,42 @@ curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20F
 
 # 零代码私有化部署
 
-不需要源码。所有 Vera 组件都以预构建镜像发布在 GitHub Container Registry——任何装了 Docker 的主机都能部署（内网隔离环境也可先把镜像同步到内部 registry 再部署）：
+不需要源码。所有 Vera 组件都以预构建镜像发布在 GitHub Container Registry——任何装了 Docker 的主机都能部署（内网隔离环境也可先把镜像同步到内部 registry 再部署）。按平台选择方式：
+
+## Linux
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
 
-脚本会自动检查 Docker、下载自包含的 compose 文件与 ClickHouse 建表脚本到 `./vera`、拉取镜像并启动。访问入口：
+脚本会自动检查 Docker、下载自包含的 compose 文件与 ClickHouse 建表脚本到 `./vera`、拉取镜像并启动。
+
+## macOS
+
+与 Linux 相同——`curl | bash` 开箱即用（自带 bash 3.2+）。
+
+## Windows
+
+**方式一：PowerShell 一键安装**（PowerShell 5.1+）：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
+```
+
+**方式二：Git Bash 或 WSL2**——直接用上面 Linux 的命令。
+
+**方式三：完全手动**：
+
+```powershell
+mkdir $env:USERPROFILE\vera\init; cd $env:USERPROFILE\vera
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/docker-compose.release.yml -OutFile docker-compose.release.yml
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/init/001_events.sql -OutFile init\001_events.sql
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/init/002_drift.sql -OutFile init\002_drift.sql
+docker compose -f docker-compose.release.yml up -d
+```
+
+三个平台的访问入口一致：
 
 | 组件        | 地址                               |
 | ----------- | ---------------------------------- |
@@ -215,12 +244,23 @@ curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 | 推理网关    | http://localhost:8080/v1/predict   |
 | ClickHouse  | http://localhost:8123（`default` / `vera`） |
 
-钉定发布版本保证可复现：
+## 钉定发布版本
+
+Linux / macOS：
 
 ```bash
 export VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera
 curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
+
+Windows PowerShell：
+
+```powershell
+$env:VERA_REF = "v0.2.0"; $env:VERA_IMAGE_TAG = "0.2.0"; $env:VERA_DIR = "C:\vera"
+irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
+```
+
+内网环境部署（如国内网络经常无法访问 `raw.githubusercontent.com`）？把 `VERA_SRC` 指向一个提供相同文件的内网 HTTP 镜像即可，三平台通用。
 
 预构建镜像（按发布版本打 tag，main 上另有 `latest`）：
 
@@ -231,7 +271,7 @@ curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 | `ghcr.io/sufengx/vera/dashboard`        | React 监控大屏       |
 | `ghcr.io/sufengx/vera/simulator`        | 模拟模型 + 流量生成器 |
 
-想手动控制？compose 文件是 `infra/docker-compose/docker-compose.release.yml`——连同 `init/*.sql` 一起拷走，执行 `docker compose -f docker-compose.release.yml up -d` 即可。所有环境变量（检测窗口、阈值、webhook）都可先 export 再启动；网关默认指向内置模拟模型——接自己的真实模型见[接入真实 AI 模型](#接入真实-ai-模型)。
+想手动控制？三个平台操作一致：把 `infra/docker-compose/docker-compose.release.yml` 连同 `init/*.sql` 拷到同一目录，执行 `docker compose -f docker-compose.release.yml up -d` 即可。所有环境变量（检测窗口、阈值、webhook）都可先设置再启动；网关默认指向内置模拟模型——接自己的真实模型见[接入真实 AI 模型](#接入真实-ai-模型)。
 
 ---
 

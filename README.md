@@ -201,13 +201,42 @@ Running a real model already? See [Connecting a Real AI Model](#connecting-a-rea
 
 # Zero-code Private Deployment
 
-No source code needed. All Vera components ship as prebuilt images on GitHub Container Registry — deploy on any host with Docker (even air-gapped internal networks, by mirroring the images to an internal registry):
+No source code needed. All Vera components ship as prebuilt images on GitHub Container Registry — deploy on any host with Docker (even air-gapped internal networks, by mirroring the images to an internal registry). Pick your platform:
+
+## Linux
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
 
-The script checks Docker, downloads a self-contained compose file and the ClickHouse init scripts into `./vera`, pulls the images and starts the stack. Access:
+The script checks Docker, downloads a self-contained compose file and the ClickHouse init scripts into `./vera`, pulls the images and starts the stack.
+
+## macOS
+
+Same as Linux — `curl | bash` works out of the box (bash 3.2+ is built in).
+
+## Windows
+
+**Option 1 — PowerShell one-liner** (PowerShell 5.1+):
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
+```
+
+**Option 2 — Git Bash or WSL2**: use the Linux command above.
+
+**Option 3 — fully manual**:
+
+```powershell
+mkdir $env:USERPROFILE\vera\init; cd $env:USERPROFILE\vera
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/docker-compose.release.yml -OutFile docker-compose.release.yml
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/init/001_events.sql -OutFile init\001_events.sql
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/sufengx/vera/main/infra/docker-compose/init/002_drift.sql -OutFile init\002_drift.sql
+docker compose -f docker-compose.release.yml up -d
+```
+
+All platforms access the same endpoints:
 
 | Component    | Address                          |
 | ------------ | -------------------------------- |
@@ -215,12 +244,23 @@ The script checks Docker, downloads a self-contained compose file and the ClickH
 | Gateway      | http://localhost:8080/v1/predict |
 | ClickHouse   | http://localhost:8123 (`default` / `vera`) |
 
-Pin a released version for reproducibility:
+## Pin a released version
+
+Linux / macOS:
 
 ```bash
 export VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera
 curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
+
+Windows PowerShell:
+
+```powershell
+$env:VERA_REF = "v0.2.0"; $env:VERA_IMAGE_TAG = "0.2.0"; $env:VERA_DIR = "C:\vera"
+irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
+```
+
+Deploying in an internal network (e.g. mainland China, where `raw.githubusercontent.com` is often unreachable)? Set `VERA_SRC` to an internal HTTP mirror serving the same files — works on all three platforms.
 
 Prebuilt images (all tagged with the released version, plus `latest` on main):
 
@@ -231,7 +271,7 @@ Prebuilt images (all tagged with the released version, plus `latest` on main):
 | `ghcr.io/sufengx/vera/dashboard`        | React big-screen dashboard       |
 | `ghcr.io/sufengx/vera/simulator`        | Mock model + traffic generator   |
 
-Prefer manual control? The compose file is `infra/docker-compose/docker-compose.release.yml` — copy it together with `init/*.sql`, then `docker compose -f docker-compose.release.yml up -d`. Override any environment variable (detector windows, thresholds, webhook) by exporting it first; the gateway points at the bundled mock model — see [Connecting a Real AI Model](#connecting-a-real-ai-model) to switch it to your own.
+Prefer manual control? Works identically on all three platforms: copy `infra/docker-compose/docker-compose.release.yml` together with `init/*.sql` into one directory, then `docker compose -f docker-compose.release.yml up -d`. Override any environment variable (detector windows, thresholds, webhook) before starting; the gateway points at the bundled mock model — see [Connecting a Real AI Model](#connecting-a-real-ai-model) to switch it to your own.
 
 ---
 
