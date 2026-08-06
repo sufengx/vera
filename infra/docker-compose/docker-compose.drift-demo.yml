@@ -1,0 +1,16 @@
+# 漂移演示：模型 60 秒后开始偏移输出分布，检测器用短窗口快速发现。
+services:
+  model-mock:
+    environment:
+      MOCK_DRIFT_AFTER: "60"
+
+  loadgen:
+    command: python send_events.py --target http://gateway:8080/v1/predict --rate 20 --duration 300
+
+  detector:
+    environment:
+      DETECTOR_CURRENT_MINUTES: "1"
+      DETECTOR_BASELINE_OFFSET: "1"
+      DETECTOR_BASELINE_MINUTES: "1"
+      DETECTOR_SCAN_INTERVAL: "30"
+      DETECTOR_MIN_EVENTS: "20"
