@@ -199,6 +199,42 @@ Running a real model already? See [Connecting a Real AI Model](#connecting-a-rea
 
 ---
 
+# Zero-code Private Deployment
+
+No source code needed. All Vera components ship as prebuilt images on GitHub Container Registry — deploy on any host with Docker (even air-gapped internal networks, by mirroring the images to an internal registry):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+```
+
+The script checks Docker, downloads a self-contained compose file and the ClickHouse init scripts into `./vera`, pulls the images and starts the stack. Access:
+
+| Component    | Address                          |
+| ------------ | -------------------------------- |
+| Dashboard    | http://localhost:8501            |
+| Gateway      | http://localhost:8080/v1/predict |
+| ClickHouse   | http://localhost:8123 (`default` / `vera`) |
+
+Pin a released version for reproducibility:
+
+```bash
+VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera \
+  curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+```
+
+Prebuilt images (all tagged with the released version, plus `latest` on main):
+
+| Image                                   | Contains                         |
+| --------------------------------------- | -------------------------------- |
+| `ghcr.io/sufengx/vera/gateway`          | Go inference gateway             |
+| `ghcr.io/sufengx/vera/detector`         | Drift detection engine           |
+| `ghcr.io/sufengx/vera/dashboard`        | React big-screen dashboard       |
+| `ghcr.io/sufengx/vera/simulator`        | Mock model + traffic generator   |
+
+Prefer manual control? The compose file is `infra/docker-compose/docker-compose.release.yml` — copy it together with `init/*.sql`, then `docker compose -f docker-compose.release.yml up -d`. Override any environment variable (detector windows, thresholds, webhook) by exporting it first; the gateway points at the bundled mock model — see [Connecting a Real AI Model](#connecting-a-real-ai-model) to switch it to your own.
+
+---
+
 # Connecting a Real AI Model
 
 Vera needs no SDK and no code changes. Your model keeps serving on its own URL — you point the gateway at it and route inference traffic through the gateway instead:

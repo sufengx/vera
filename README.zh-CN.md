@@ -199,6 +199,42 @@ curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20F
 
 ---
 
+# 零代码私有化部署
+
+不需要源码。所有 Vera 组件都以预构建镜像发布在 GitHub Container Registry——任何装了 Docker 的主机都能部署（内网隔离环境也可先把镜像同步到内部 registry 再部署）：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+```
+
+脚本会自动检查 Docker、下载自包含的 compose 文件与 ClickHouse 建表脚本到 `./vera`、拉取镜像并启动。访问入口：
+
+| 组件        | 地址                               |
+| ----------- | ---------------------------------- |
+| 监控大屏    | http://localhost:8501              |
+| 推理网关    | http://localhost:8080/v1/predict   |
+| ClickHouse  | http://localhost:8123（`default` / `vera`） |
+
+钉定发布版本保证可复现：
+
+```bash
+VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera \
+  curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+```
+
+预构建镜像（按发布版本打 tag，main 上另有 `latest`）：
+
+| 镜像                                    | 内容                 |
+| --------------------------------------- | -------------------- |
+| `ghcr.io/sufengx/vera/gateway`          | Go 推理网关          |
+| `ghcr.io/sufengx/vera/detector`         | 漂移检测引擎         |
+| `ghcr.io/sufengx/vera/dashboard`        | React 监控大屏       |
+| `ghcr.io/sufengx/vera/simulator`        | 模拟模型 + 流量生成器 |
+
+想手动控制？compose 文件是 `infra/docker-compose/docker-compose.release.yml`——连同 `init/*.sql` 一起拷走，执行 `docker compose -f docker-compose.release.yml up -d` 即可。所有环境变量（检测窗口、阈值、webhook）都可先 export 再启动；网关默认指向内置模拟模型——接自己的真实模型见[接入真实 AI 模型](#接入真实-ai-模型)。
+
+---
+
 # 接入真实 AI 模型
 
 Vera 无需 SDK、无需改代码。你的模型继续跑在自己的地址上——只需把网关指到它，让推理流量改走网关：

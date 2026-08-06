@@ -1,0 +1,88 @@
+# Vera 零代码私有化部署版：纯镜像拉取，不构建源码。
+# 用法: docker compose -f docker-compose.release.yml up -d
+# 版本钉定: export VERA_IMAGE_TAG=<version>（默认 latest，install.sh 传参）
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ch-data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: vera
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  model-mock:
+    image: ghcr.io/sufengx/vera/simulator:${VERA_IMAGE_TAG:-latest}
+    command: python mock_model.py
+    environment:
+      MOCK_PORT: "9000"
+      MOCK_DRIFT_AFTER: ${MOCK_DRIFT_AFTER:-0}
+      MOCK_DRIFT_SHIFT: ${MOCK_DRIFT_SHIFT:-0.4}
+
+  gateway:
+    image: ghcr.io/sufengx/vera/gateway:${VERA_IMAGE_TAG:-latest}
+    ports:
+      - "8080:8080"
+    environment:
+      GATEWAY_UPSTREAM: http://model-mock:9000
+      CLICKHOUSE_ADDR: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
+      CLICKHOUSE_DB: vera
+      MODEL_NAME: ctr
+      MODEL_VERSION: v1
+      CONTAINER_ID: gateway-local
+    depends_on:
+      - clickhouse
+      - model-mock
+
+  detector:
+    image: ghcr.io/sufengx/vera/detector:${VERA_IMAGE_TAG:-latest}
+    environment:
+      CLICKHOUSE_ADDR: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
+      CLICKHOUSE_DB: vera
+      DETECTOR_CURRENT_MINUTES: ${DETECTOR_CURRENT_MINUTES:-5}
+      DETECTOR_BASELINE_OFFSET: ${DETECTOR_BASELINE_OFFSET:-30}
+      DETECTOR_BASELINE_MINUTES: ${DETECTOR_BASELINE_MINUTES:-30}
+      DETECTOR_SCAN_INTERVAL: ${DETECTOR_SCAN_INTERVAL:-60}
+      DETECTOR_KS_THRESHOLD: ${DETECTOR_KS_THRESHOLD:-0.05}
+      DETECTOR_PSI_THRESHOLD: ${DETECTOR_PSI_THRESHOLD:-0.1}
+      DETECTOR_MIN_EVENTS: ${DETECTOR_MIN_EVENTS:-50}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_COOLDOWN_MINUTES: ${ALERT_COOLDOWN_MINUTES:-15}
+    depends_on:
+      - clickhouse
+
+  dashboard:
+    image: ghcr.io/sufengx/vera/dashboard:${VERA_IMAGE_TAG:-latest}
+    ports:
+      - "8501:8501"
+    environment:
+      CLICKHOUSE_ADDR: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
+      CLICKHOUSE_DB: vera
+      DETECTOR_CURRENT_MINUTES: ${DETECTOR_CURRENT_MINUTES:-5}
+      DETECTOR_BASELINE_OFFSET: ${DETECTOR_BASELINE_OFFSET:-30}
+      DETECTOR_BASELINE_MINUTES: ${DETECTOR_BASELINE_MINUTES:-30}
+    depends_on:
+      - clickhouse
+
+  loadgen:
+    image: ghcr.io/sufengx/vera/simulator:${VERA_IMAGE_TAG:-latest}
+    command: python send_events.py --target http://gateway:8080/v1/predict --rate 20 --duration 30
+    depends_on:
+      - gateway
+
+volumes:
+  ch-data:
