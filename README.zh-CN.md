@@ -147,7 +147,7 @@ ClickHouse 存储
 | ---------------------- | ---------------------------------------------------- | ----------- |
 | `services/gateway`     | Go 推理网关：代理 + 事件采集 + 异步 ClickHouse 写入  | ✅ 可用     |
 | `services/detector`    | 漂移检测引擎（事件信号的 KS 检验 / PSI）             | ✅ 可用     |
-| `services/dashboard`   | Streamlit 仪表盘：流量指标与漂移告警                 | ✅ 可用     |
+| `services/dashboard`   | 中英双语 Streamlit 仪表盘：指标、图表与漂移告警      | ✅ 可用     |
 | `tools/simulator`      | 模拟模型服务与流量生成器                             | ✅ 可用     |
 | `infra/docker-compose` | 本地开发环境                                         | ✅ 可用     |
 | `sdk/python`           | 应用级信号的 Python SDK                              | 🚧 规划中   |

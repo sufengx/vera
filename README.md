@@ -147,7 +147,7 @@ Load tests (vegeta, see `tools/loadtest`):
 | ---------------------- | ---------------------------------------------------------------------- | ----------- |
 | `services/gateway`     | Go inference gateway: proxy + event collection + async ClickHouse sink | ✅ Available |
 | `services/detector`    | Drift detection engine (KS test / PSI on event signals)                | ✅ Available |
-| `services/dashboard`   | Streamlit dashboard: traffic metrics and drift alerts                  | ✅ Available |
+| `services/dashboard`   | Bilingual (EN/中文) Streamlit dashboard: metrics, charts and drift alerts | ✅ Available |
 | `tools/simulator`      | Mock model service and traffic generator                               | ✅ Available |
 | `infra/docker-compose` | Local development environment                                          | ✅ Available |
 | `sdk/python`           | Python SDK for application-level signals                               | 🚧 Planned  |
