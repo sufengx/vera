@@ -31,6 +31,10 @@ Vera 致力于回答一个问题：
   - 批量压缩写入 ClickHouse。
   - 面向大规模 OLAP 分析与实时检测设计。
 
+- **内建漂移检测**
+  - 基于 KS 检验与 PSI 的事件信号漂移引擎。
+  - Webhook 告警与实时 Streamlit 仪表盘。
+
 - **企业级架构**
   - 自托管部署。
   - Docker Compose 本地环境。
@@ -83,7 +87,7 @@ Vera 致力于回答一个问题：
 
 # 当前状态
 
-端到端采集管道已经跑通：
+端到端管道已经跑通：
 
 ```text
 网关
@@ -91,6 +95,8 @@ Vera 致力于回答一个问题：
 事件采集
    ↓
 ClickHouse 存储
+   ↓
+漂移检测 → 仪表盘与告警
 ```
 
 已验证：
@@ -99,12 +105,14 @@ ClickHouse 存储
 * gzip 批量编码
 * 失败事件重试机制
 * ClickHouse 认证支持
+* 漂移检测引擎（KS 检验 / PSI）与 webhook 告警
+* 实时指标与漂移状态的 Streamlit 仪表盘
 * 基于 Docker Compose 的集成测试
 
 当前开发重点：
 
 * Python SDK
-* 漂移检测引擎
+* Embedding 漂移检测
 * 根因分析
 * LLM 可观测性支持
 * 自动化修复
@@ -138,10 +146,11 @@ ClickHouse 存储
 | 路径                   | 说明                                                 | 状态        |
 | ---------------------- | ---------------------------------------------------- | ----------- |
 | `services/gateway`     | Go 推理网关：代理 + 事件采集 + 异步 ClickHouse 写入  | ✅ 可用     |
+| `services/detector`    | 漂移检测引擎（事件信号的 KS 检验 / PSI）             | ✅ 可用     |
+| `services/dashboard`   | Streamlit 仪表盘：流量指标与漂移告警                 | ✅ 可用     |
 | `tools/simulator`      | 模拟模型服务与流量生成器                             | ✅ 可用     |
 | `infra/docker-compose` | 本地开发环境                                         | ✅ 可用     |
 | `sdk/python`           | 应用级信号的 Python SDK                              | 🚧 规划中   |
-| `services/detector`    | 漂移检测引擎（KS / PSI / embedding 距离）            | 🚧 规划中   |
 | `services/rootcause`   | 根因分析引擎                                         | 🚧 规划中   |
 | `charts/helm`          | Kubernetes 部署模板                                  | 🚧 规划中   |
 
@@ -166,6 +175,8 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 * `model-mock` - 模拟模型服务
 * `loadgen` - 流量生成器
 * `clickhouse` - 事件存储
+* `detector` - 漂移检测引擎
+* `dashboard` - Streamlit 仪表盘，地址 http://localhost:8501
 
 测试推理：
 
@@ -211,12 +222,52 @@ curl -s "http://localhost:8123/?query=SELECT%20count(*)%20FROM%20vera.events%20F
 
 ---
 
+# 漂移检测
+
+检测器（`services/detector`）周期性对比当前事件窗口与基准窗口，标记分布发生偏移的信号：
+
+| 信号                  | 方法  |
+| --------------------- | ----- |
+| `prediction`          | PSI   |
+| `confidence`          | KS    |
+| `latency_ms`          | KS    |
+
+当统计量超过阈值即判定漂移。结果写入 `vera.drift_results` 并在仪表盘展示。窗口大小与阈值均可通过环境变量配置（见 `infra/docker-compose/docker-compose.yml`）。
+
+漂移信号会通过 Slack 兼容 webhook 发送告警（`ALERT_WEBHOOK_URL`）。
+
+## 漂移演示
+
+以漂移模拟模式启动全栈——模拟模型会在启动 60 秒后偏移输出分布：
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.yml \
+  -f infra/docker-compose/docker-compose.drift-demo.yml up --build
+```
+
+打开 http://localhost:8501：几分钟内漂移信号会在仪表盘上变红。
+
+直接查询漂移结果：
+
+```bash
+curl -s -u default:vera "http://localhost:8123/?query=SELECT+metric,score,threshold,drifted+FROM+vera.drift_results+ORDER+BY+timestamp+DESC+FORMAT+CSV"
+```
+
+演示结束后重置环境：
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.yml down -v
+```
+
+---
+
 # 目录结构
 
 ```text
 services/gateway       # Go 网关（代理 + 事件采集 + ClickHouse 写入）
+services/detector      # 漂移检测引擎
+services/dashboard     # Streamlit 仪表盘
 sdk/python             # Python SDK
-services/detector      # 漂移检测
 services/rootcause     # 根因分析
 tools/simulator        # 模拟模型 + 流量生成器
 tools/loadtest         # 压测配置
@@ -236,11 +287,11 @@ charts/helm            # Kubernetes 部署
 
 ## 阶段二：AI 可靠性
 
+* [x] 数据漂移检测
+* [x] 告警系统
 * [ ] Python SDK
-* [ ] 数据漂移检测
 * [ ] Embedding 漂移检测
 * [ ] 根因分析
-* [ ] 告警系统
 
 ## 阶段三：LLM 与 Agent 可观测性
 

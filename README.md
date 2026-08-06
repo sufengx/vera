@@ -31,6 +31,10 @@ Whether it is caused by data distribution changes, model degradation, prompt cha
   - Batch compressed event ingestion into ClickHouse.
   - Designed for large-scale OLAP analysis and real-time detection.
 
+- **Built-in drift detection**
+  - KS test and PSI based drift engine over event signals.
+  - Webhook alerting and a live Streamlit dashboard.
+
 - **Enterprise-ready architecture**
   - Self-hosted deployment.
   - Docker Compose local environment.
@@ -83,7 +87,7 @@ Whether it is caused by data distribution changes, model degradation, prompt cha
 
 # Current Status
 
-The end-to-end ingestion pipeline is already working:
+The end-to-end pipeline is already working:
 
 ```text
 Gateway
@@ -91,6 +95,8 @@ Gateway
 Event Collection
    ↓
 ClickHouse Storage
+   ↓
+Drift Detection → Dashboard & Alerts
 ```
 
 Verified:
@@ -99,12 +105,14 @@ Verified:
 * gzip batch encoding
 * Failed event retry mechanism
 * ClickHouse authentication support
+* Drift detection engine (KS test / PSI) with webhook alerting
+* Streamlit dashboard for live metrics and drift status
 * Docker Compose based integration testing
 
 Current development focus:
 
 * Python SDK
-* Drift detection engine
+* Embedding drift detection
 * Root cause analysis
 * LLM observability support
 * Automated mitigation
@@ -138,10 +146,11 @@ Load tests (vegeta, see `tools/loadtest`):
 | Path                   | Description                                                            | Status      |
 | ---------------------- | ---------------------------------------------------------------------- | ----------- |
 | `services/gateway`     | Go inference gateway: proxy + event collection + async ClickHouse sink | ✅ Available |
+| `services/detector`    | Drift detection engine (KS test / PSI on event signals)                | ✅ Available |
+| `services/dashboard`   | Streamlit dashboard: traffic metrics and drift alerts                  | ✅ Available |
 | `tools/simulator`      | Mock model service and traffic generator                               | ✅ Available |
 | `infra/docker-compose` | Local development environment                                          | ✅ Available |
 | `sdk/python`           | Python SDK for application-level signals                               | 🚧 Planned  |
-| `services/detector`    | Drift detection engine (KS / PSI / embedding distance)                 | 🚧 Planned  |
 | `services/rootcause`   | Root cause analysis engine                                             | 🚧 Planned  |
 | `charts/helm`          | Kubernetes deployment templates                                        | 🚧 Planned  |
 
@@ -166,6 +175,8 @@ This starts:
 * `model-mock` - simulated model service
 * `loadgen` - traffic generator
 * `clickhouse` - event storage
+* `detector` - drift detection engine
+* `dashboard` - Streamlit dashboard at http://localhost:8501
 
 Test inference:
 
@@ -213,12 +224,52 @@ The inference path is never blocked by storage failures.
 
 ---
 
+# Drift Detection
+
+The detector (`services/detector`) periodically compares the current event window against a baseline window and flags signals whose distribution has shifted:
+
+| Signal        | Test  |
+| ------------- | ----- |
+| `prediction`  | PSI   |
+| `confidence`  | KS    |
+| `latency_ms`  | KS    |
+
+A signal is drifted when its score crosses the threshold. Results are stored in `vera.drift_results` and shown on the dashboard. Window sizes and thresholds are configurable via environment variables (see `infra/docker-compose/docker-compose.yml`).
+
+Drifted signals trigger alerts to a Slack-compatible webhook (`ALERT_WEBHOOK_URL`).
+
+## Drift Demo
+
+Start the stack with drift simulation — the mock model shifts its output distribution 60 seconds after startup:
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.yml \
+  -f infra/docker-compose/docker-compose.drift-demo.yml up --build
+```
+
+Open http://localhost:8501: within a few minutes the drifted signals turn red on the dashboard.
+
+Query drift results directly:
+
+```bash
+curl -s -u default:vera "http://localhost:8123/?query=SELECT+metric,score,threshold,drifted+FROM+vera.drift_results+ORDER+BY+timestamp+DESC+FORMAT+CSV"
+```
+
+Reset the environment afterwards:
+
+```bash
+docker compose -f infra/docker-compose/docker-compose.yml down -v
+```
+
+---
+
 # Directory Structure
 
 ```text
 services/gateway       # Go gateway (proxy + event collection + ClickHouse sink)
+services/detector      # Drift detection engine
+services/dashboard     # Streamlit dashboard
 sdk/python             # Python SDK
-services/detector      # Drift detection
 services/rootcause     # Root cause analysis
 tools/simulator        # Mock model + traffic generator
 tools/loadtest         # Load testing configuration
@@ -238,11 +289,11 @@ charts/helm            # Kubernetes deployment
 
 ## Phase 2: AI Reliability
 
+* [x] Data drift detection
+* [x] Alerting system
 * [ ] Python SDK
-* [ ] Data drift detection
 * [ ] Embedding drift detection
 * [ ] Root cause analysis
-* [ ] Alerting system
 
 ## Phase 3: LLM & Agent Observability
 
