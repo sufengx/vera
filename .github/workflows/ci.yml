@@ -36,15 +36,26 @@ jobs:
   lint-python:
     name: Lint Python Services
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: tools/simulator
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m py_compile mock_model.py send_events.py
+      - run: python -m py_compile tools/simulator/mock_model.py tools/simulator/send_events.py services/detector/*.py services/dashboard/app.py
+
+  test-detector:
+    name: Unit Tests — Detector
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/detector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests -q
 
   build-docker:
     name: Build Docker Images
@@ -52,6 +63,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t vera/gateway:ci services/gateway
+      - run: docker build -t vera/detector:ci services/detector
+      - run: docker build -t vera/dashboard:ci services/dashboard
 
   integration:
     name: Integration Tests (docker-compose)
@@ -59,6 +72,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 启动全栈（含全新环境初始化）
+        env:
+          DETECTOR_CURRENT_MINUTES: "1"
+          DETECTOR_BASELINE_OFFSET: "1"
+          DETECTOR_BASELINE_MINUTES: "1"
+          DETECTOR_SCAN_INTERVAL: "20"
+          DETECTOR_MIN_EVENTS: "5"
         run: docker compose -f infra/docker-compose/docker-compose.yml up -d --build
       - name: 等 loadgen 打完流量并落库（30s 压测 + 批量刷新余量）
         run: sleep 40
@@ -67,6 +86,13 @@ jobs:
           COUNT=$(curl -s -u default:vera "http://localhost:8123/?query=SELECT+count(*)+FROM+vera.events+FORMAT+CSV")
           echo "events=$COUNT"
           [ "$COUNT" -gt 0 ] || { echo "集成测试失败：无事件落库"; exit 1; }
+      - name: 等检测器完成至少一轮扫描
+        run: sleep 30
+      - name: 断言漂移结果已写入
+        run: |
+          COUNT=$(curl -s -u default:vera "http://localhost:8123/?query=SELECT+count(*)+FROM+vera.drift_results+FORMAT+CSV")
+          echo "drift_results=$COUNT"
+          [ "$COUNT" -gt 0 ] || { echo "集成测试失败：无漂移结果"; exit 1; }
       - name: 清理环境
         if: always()
         run: docker compose -f infra/docker-compose/docker-compose.yml down -v
