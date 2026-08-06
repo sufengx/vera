@@ -218,8 +218,8 @@ curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 钉定发布版本保证可复现：
 
 ```bash
-VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera \
-  curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+export VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera
+curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
 
 预构建镜像（按发布版本打 tag，main 上另有 `latest`）：

@@ -11,18 +11,19 @@ set -euo pipefail
 VERA_REF="${VERA_REF:-main}"
 VERA_IMAGE_TAG="${VERA_IMAGE_TAG:-latest}"
 VERA_DIR="${VERA_DIR:-./vera}"
-BASE="https://raw.githubusercontent.com/sufengx/vera/${VERA_REF}"
+# 安装源：默认 GitHub raw；内网环境可指向内部 HTTP 镜像
+BASE="${VERA_SRC:-https://raw.githubusercontent.com/sufengx/vera/${VERA_REF}}"
 FILES="infra/docker-compose/docker-compose.release.yml infra/docker-compose/init/001_events.sql infra/docker-compose/init/002_drift.sql"
 
 command -v docker >/dev/null 2>&1 || { echo "错误：未找到 docker，请先安装 Docker"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "错误：需要 docker compose v2"; exit 1; }
 
 mkdir -p "${VERA_DIR}/init"
-for f in ${FILES}; do
-  curl -fsSL "${BASE}/${f}" -o "${VERA_DIR}/${f}"
-done
-
 cd "${VERA_DIR}"
+curl -fsSL "${BASE}/infra/docker-compose/docker-compose.release.yml" -o docker-compose.release.yml
+curl -fsSL "${BASE}/infra/docker-compose/init/001_events.sql" -o init/001_events.sql
+curl -fsSL "${BASE}/infra/docker-compose/init/002_drift.sql" -o init/002_drift.sql
+
 export VERA_IMAGE_TAG
 docker compose -f docker-compose.release.yml pull
 docker compose -f docker-compose.release.yml up -d

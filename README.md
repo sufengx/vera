@@ -218,8 +218,8 @@ The script checks Docker, downloads a self-contained compose file and the ClickH
 Pin a released version for reproducibility:
 
 ```bash
-VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera \
-  curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
+export VERA_REF=v0.2.0 VERA_IMAGE_TAG=0.2.0 VERA_DIR=/opt/vera
+curl -sSL https://raw.githubusercontent.com/sufengx/vera/main/install.sh | bash
 ```
 
 Prebuilt images (all tagged with the released version, plus `latest` on main):
