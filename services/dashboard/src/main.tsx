@@ -31,10 +31,20 @@ const TOOLTIP_STYLE = {
 const POLL_MS = 10000;
 const WINDOW = { cur: 5, off: 30, base: 30 }; // 分钟，与检测器默认参数一致
 
+/* ── 时间工具：ClickHouse 存 UTC，展示时转浏览器本地时区 ── */
+const p2 = (n: number) => String(n).padStart(2, "0");
+const WEEK_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+const WEEK_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const toLocal = (utc: string) => new Date(utc.length === 19 ? `${utc}Z` : utc);
+const fmtLocal = (utc: string, sec = true) => {
+  const d = toLocal(utc);
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}${sec ? `:${p2(d.getSeconds())}` : ""}`;
+};
+
 /* ── I18N ─────────────────────────────────────────────── */
 const I18N: Record<string, Record<string, string>> = {
   zh: {
-    title: "Vera AI 可观测性与漂移检测平台",
+    title: "Vera AI 可观测性大屏",
     statusOk: "系统运行正常",
     statusOkSub: "所有信号处于正常范围",
     statusDrift: "检测到漂移",
@@ -178,7 +188,7 @@ async function fetchDashboardData(): Promise<DashData> {
     ch(`SELECT confidence AS v FROM vera.events WHERE timestamp >= '${w.curStart}' AND timestamp < '${w.now}' AND confidence IS NOT NULL LIMIT 3000`),
     ch(`SELECT confidence AS v FROM vera.events WHERE timestamp >= '${w.baseStart}' AND timestamp < '${w.baseEnd}' AND confidence IS NOT NULL LIMIT 3000`),
   ]);
-  const hhmm = (t: string) => t.slice(11, 16);
+  const hhmm = (t: string) => fmtLocal(t, false).slice(11, 16);
   return {
     ev: Number(evR[0]?.c ?? 0),
     evPrev: Number(evPrevR[0]?.c ?? 0),
@@ -186,7 +196,7 @@ async function fetchDashboardData(): Promise<DashData> {
     p99: Number(pR[0]?.p99 ?? 0),
     p50Prev: Number(pPrevR[0]?.p50 ?? 0),
     p99Prev: Number(pPrevR[0]?.p99 ?? 0),
-    scanTs: scanR.length ? String(scanR[0].t).slice(0, 19) : null,
+    scanTs: scanR.length ? fmtLocal(String(scanR[0].t)) : null,
     signals: signalsR.map((r) => ({
       metric: String(r.metric),
       score: Number(r.score),
@@ -195,7 +205,7 @@ async function fetchDashboardData(): Promise<DashData> {
     })),
     traffic: trafficR.map((r) => ({ t: hhmm(String(r.t)), n: Number(r.n) })),
     latency: latencyR.map((r) => ({ t: hhmm(String(r.t)), p50: Number(r.p50), p99: Number(r.p99) })),
-    driftEvents: eventsR.map((r) => ({ time: String(r.t).slice(11, 19), metric: String(r.metric) })),
+    driftEvents: eventsR.map((r) => ({ time: fmtLocal(String(r.t)).slice(11, 19), metric: String(r.metric) })),
     distPred: distRows(predCur, predBase),
     distConf: distRows(confCur, confBase),
   };
@@ -258,13 +268,16 @@ function MetricCard({ icon, value, label, delta, deltaColor, badge }: {
 }) {
   return (
     <div className="relative flex flex-col rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
-      <div className="mb-1.5 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <span className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-slate-400">{icon}</span>
+        <span className="text-[0.68rem] uppercase tracking-wider text-slate-500">{label}</span>
         {badge && <span className="h-2 w-2 rounded-full bg-vera-red shadow-[0_0_8px_rgba(239,68,68,0.6)]" />}
       </div>
-      <div className="font-mono text-4xl font-bold leading-none text-white">{value}</div>
-      <div className="mt-2 text-[0.68rem] uppercase tracking-wider text-slate-500">{label}</div>
-      {delta && <div className="mt-1 font-mono text-xs font-medium" style={{ color: deltaColor ?? "#94a3b8" }}>{delta}</div>}
+      <div className="my-2.5 font-mono text-4xl font-bold leading-none text-white">{value}</div>
+      {delta && (
+        <span className="self-start rounded-full px-2 py-0.5 font-mono text-xs font-semibold"
+          style={{ background: `${deltaColor ?? "#94a3b8"}22`, color: deltaColor ?? "#94a3b8" }}>{delta}</span>
+      )}
     </div>
   );
 }
@@ -293,17 +306,22 @@ function SignalRow({ sig, t }: { sig: Signal; t: (k: string) => string }) {
   );
 }
 
-function Clock() {
+function Clock({ lang }: { lang: "zh" | "en" }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
-  const p = (n: number) => String(n).padStart(2, "0");
+  const week = lang === "zh" ? `周${WEEK_ZH[now.getDay()]}` : WEEK_EN[now.getDay()];
   return (
-    <span className="font-mono text-xl text-slate-100">
-      {p(now.getHours())}:{p(now.getMinutes())}:{p(now.getSeconds())}
-    </span>
+    <div className="text-right leading-tight">
+      <div className="font-mono text-xs text-slate-400">
+        {now.getFullYear()}-{p2(now.getMonth() + 1)}-{p2(now.getDate())} {week}
+      </div>
+      <div className="font-mono text-xl text-slate-100">
+        {p2(now.getHours())}:{p2(now.getMinutes())}:{p2(now.getSeconds())}
+      </div>
+    </div>
   );
 }
 
@@ -400,7 +418,7 @@ function LeftColumn({ t, data }: { t: (k: string) => string; data: DashData }) {
     ? `${data.ev - data.evPrev >= 0 ? "+" : ""}${(data.ev - data.evPrev).toLocaleString()}`
     : "—";
   const metrics = [
-    { icon: "events", value: data.ev.toLocaleString(), label: t("metricEvents"), delta: evDelta, deltaColor: "#94a3b8" },
+    { icon: "events", value: data.ev.toLocaleString(), label: t("metricEvents"), delta: evDelta, deltaColor: data.ev >= data.evPrev ? GREEN : RED },
     { icon: "p50", value: `${data.p50.toFixed(1)} ms`, label: t("metricP50"), delta: fmtDelta(data.p50, data.p50Prev, 1), deltaColor: deltaColor(data.p50, data.p50Prev) },
     { icon: "p99", value: `${data.p99.toFixed(1)} ms`, label: t("metricP99"), delta: fmtDelta(data.p99, data.p99Prev, 1), deltaColor: deltaColor(data.p99, data.p99Prev) },
     { icon: "drift", value: String(nDrifted), label: t("metricDrift"), badge: nDrifted > 0 },
@@ -540,7 +558,7 @@ function TopBar({ t, lang, setLang, data }: {
         <div className="text-left leading-tight">
           <div className="text-lg font-bold text-white">{t("statusDrift")}</div>
           <div className="text-xs text-red-200/80">
-            {t("statusDriftSub").replace("{n}", String(nDrifted))} · {t("scanAt")} {data.scanTs} UTC
+            {t("statusDriftSub").replace("{n}", String(nDrifted))} · {t("scanAt")} {data.scanTs}
           </div>
         </div>
       </div>
@@ -555,7 +573,7 @@ function TopBar({ t, lang, setLang, data }: {
         <div className="text-left leading-tight">
           <div className="text-lg font-bold text-white">{t("statusOk")}</div>
           <div className="text-xs text-emerald-200/80">
-            {t("statusOkSub")} · {t("scanAt")} {data.scanTs} UTC
+            {t("statusOkSub")} · {t("scanAt")} {data.scanTs}
           </div>
         </div>
       </div>
@@ -572,11 +590,7 @@ function TopBar({ t, lang, setLang, data }: {
       </div>
       <div className="flex flex-1 justify-center">{banner}</div>
       <div className="flex w-[26%] items-center justify-end gap-4">
-        <Clock />
-        <svg className="h-4 w-4 animate-[spin_3s_linear_infinite] text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-          <path d="M21 3v6h-6" />
-        </svg>
+        <Clock lang={lang} />
         <LangToggle lang={lang} setLang={setLang} />
       </div>
     </header>
