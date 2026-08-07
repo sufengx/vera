@@ -153,7 +153,7 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 
 Dashboard: http://localhost:8501 · Gateway: http://localhost:8080/v1/predict
 
-Full instructions — zero-code install (Linux/macOS/Windows), source build, connecting a real model — in [DEPLOYMENT.md](DEPLOYMENT.md).
+The stack includes a mock model for local evaluation — production deployments ship without it and connect your real model instead. Full instructions — zero-code install (Linux/macOS/Windows), source build, connecting a real model — in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 

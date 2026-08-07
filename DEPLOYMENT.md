@@ -55,6 +55,8 @@ All platforms access the same endpoints:
 | Gateway      | http://localhost:8080/v1/predict |
 | ClickHouse   | http://localhost:8123 (`default` / `vera`) |
 
+The release stack ships no mock or demo services — the dashboard shows only real data flowing through the gateway. Connect your model service (see [Connecting a Real AI Model](#connecting-a-real-ai-model)) and route inference calls through `http://<host>:8080/v1/predict`.
+
 ### Pin a released version
 
 Linux / macOS:
@@ -80,7 +82,6 @@ Prebuilt images (all tagged with the released version, plus `latest` on main):
 | `ghcr.io/sufengx/vera/gateway`          | Go inference gateway             |
 | `ghcr.io/sufengx/vera/detector`         | Drift detection engine           |
 | `ghcr.io/sufengx/vera/dashboard`        | React big-screen dashboard       |
-| `ghcr.io/sufengx/vera/simulator`        | Mock model + traffic generator   |
 
 ---
 
@@ -100,11 +101,13 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 This starts:
 
 * `gateway` - AI inference gateway
-* `model-mock` - simulated model service
-* `loadgen` - traffic generator
+* `model-mock` - simulated model service (dev only)
+* `loadgen` - traffic generator (dev only)
 * `clickhouse` - event storage
 * `detector` - drift detection engine
 * `dashboard` - big-screen dashboard at http://localhost:8501
+
+`model-mock` and `loadgen` are development helpers that generate synthetic traffic so you can evaluate Vera locally without a real model. They are not part of the production deployment above.
 
 Test inference:
 
@@ -135,17 +138,23 @@ your app ──► Vera Gateway :8080 ──► your model service (unchanged)
 
 ## 1. Point the gateway at your model
 
-Set `GATEWAY_UPSTREAM` to your model service (a compose override, or `.env`):
+Set `GATEWAY_UPSTREAM` to your model service — a `.env` next to the compose file (zero-code install), or a compose override (source install):
+
+```bash
+# zero-code install: .env beside docker-compose.release.yml
+echo "GATEWAY_UPSTREAM=http://your-model-host:9000" >> .env
+docker compose -f docker-compose.release.yml up -d
+```
 
 ```yaml
-# docker-compose.override.yml
+# source install: docker-compose.override.yml
 services:
   gateway:
     environment:
       GATEWAY_UPSTREAM: "http://your-model-host:9000"
 ```
 
-The gateway proxies every request verbatim — path, headers and body — so existing clients keep working. Only the base URL changes to `http://<vera-host>:8080`.
+The default upstream is `http://host.docker.internal:9000` — a model running on the same host needs no configuration. The gateway proxies every request verbatim — path, headers and body — so existing clients keep working. Only the base URL changes to `http://<vera-host>:8080`.
 
 ## 2. Tell Vera about the request (optional headers)
 

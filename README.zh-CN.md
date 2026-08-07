@@ -153,7 +153,7 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 
 大屏：http://localhost:8501 · 网关：http://localhost:8080/v1/predict
 
-完整说明——零代码安装（Linux/macOS/Windows）、源码构建、接入真实模型——见 [DEPLOYMENT.zh-CN.md](DEPLOYMENT.zh-CN.md)。
+该栈包含一个模拟模型用于本地评估——生产部署不包含它，需接入你的真实模型。完整说明——零代码安装（Linux/macOS/Windows）、源码构建、接入真实模型——见 [DEPLOYMENT.zh-CN.md](DEPLOYMENT.zh-CN.md)。
 
 ---
 

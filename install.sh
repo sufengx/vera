@@ -34,6 +34,8 @@ Vera 已启动：
   监控大屏   http://localhost:8501
   推理网关   http://localhost:8080/v1/predict
   ClickHouse http://localhost:8123 (default/vera)
+接入模型：
+  echo "GATEWAY_UPSTREAM=http://你的模型:9000" >> ${VERA_DIR}/.env && cd ${VERA_DIR} && docker compose -f docker-compose.release.yml up -d
 管理：
   停止   cd ${VERA_DIR} && docker compose -f docker-compose.release.yml down
   日志   cd ${VERA_DIR} && docker compose -f docker-compose.release.yml logs -f detector

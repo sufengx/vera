@@ -55,6 +55,8 @@ docker compose -f docker-compose.release.yml up -d
 | 推理网关    | http://localhost:8080/v1/predict   |
 | ClickHouse  | http://localhost:8123（`default` / `vera`） |
 
+发布版不包含任何模拟/演示服务——大屏只展示真实流量。接入你的模型服务（见[接入真实 AI 模型](#接入真实-ai-模型)），让推理流量改走 `http://<主机>:8080/v1/predict`。
+
 ### 钉定发布版本
 
 Linux / macOS：
@@ -80,7 +82,6 @@ irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
 | `ghcr.io/sufengx/vera/gateway`          | Go 推理网关          |
 | `ghcr.io/sufengx/vera/detector`         | 漂移检测引擎         |
 | `ghcr.io/sufengx/vera/dashboard`        | React 监控大屏       |
-| `ghcr.io/sufengx/vera/simulator`        | 模拟模型 + 流量生成器 |
 
 ---
 
@@ -100,11 +101,13 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 将启动以下服务：
 
 * `gateway` - AI 推理网关
-* `model-mock` - 模拟模型服务
-* `loadgen` - 流量生成器
+* `model-mock` - 模拟模型服务（仅开发用）
+* `loadgen` - 流量生成器（仅开发用）
 * `clickhouse` - 事件存储
 * `detector` - 漂移检测引擎
 * `dashboard` - 监控大屏，地址 http://localhost:8501
+
+`model-mock` 与 `loadgen` 是开发辅助工具，用来在没有真实模型时本地生成合成流量评估 Vera，不属于上面的生产部署。
 
 测试推理：
 
@@ -135,17 +138,23 @@ Vera 无需 SDK、无需改代码。你的模型继续跑在自己的地址上�
 
 ## 1. 把网关指到你的模型
 
-将 `GATEWAY_UPSTREAM` 设为你的模型服务地址（compose override 或 `.env`）：
+将 `GATEWAY_UPSTREAM` 设为你的模型服务地址——零代码部署写在 compose 旁的 `.env`，源码部署用 compose override：
+
+```bash
+# 零代码部署：在 docker-compose.release.yml 旁边写 .env
+echo "GATEWAY_UPSTREAM=http://your-model-host:9000" >> .env
+docker compose -f docker-compose.release.yml up -d
+```
 
 ```yaml
-# docker-compose.override.yml
+# 源码部署：docker-compose.override.yml
 services:
   gateway:
     environment:
       GATEWAY_UPSTREAM: "http://your-model-host:9000"
 ```
 
-网关原样转发每个请求（路径、请求头、请求体），现有客户端不用改，只需要把 base URL 换成 `http://<vera-host>:8080`。
+默认上游是 `http://host.docker.internal:9000`——模型跑在同一台宿主机上就无需任何配置。网关原样转发每个请求（路径、请求头、请求体），现有客户端不用改，只需要把 base URL 换成 `http://<vera-host>:8080`。
 
 ## 2. 告诉 Vera 请求的归属（可选请求头）
 

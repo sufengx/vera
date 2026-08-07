@@ -1,6 +1,7 @@
-# Vera 零代码私有化部署版：纯镜像拉取，不构建源码。
+# Vera 零代码私有化部署版：纯镜像拉取，不构建源码，不含任何模拟/测试服务。
 # 用法: docker compose -f docker-compose.release.yml up -d
 # 版本钉定: export VERA_IMAGE_TAG=<version>（默认 latest，install.sh 传参）
+# 接入真实模型: 设置 GATEWAY_UPSTREAM（默认指向宿主机 9000 端口）
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
@@ -19,20 +20,14 @@ services:
         soft: 262144
         hard: 262144
 
-  model-mock:
-    image: ghcr.io/sufengx/vera/simulator:${VERA_IMAGE_TAG:-latest}
-    command: python mock_model.py
-    environment:
-      MOCK_PORT: "9000"
-      MOCK_DRIFT_AFTER: ${MOCK_DRIFT_AFTER:-0}
-      MOCK_DRIFT_SHIFT: ${MOCK_DRIFT_SHIFT:-0.4}
-
   gateway:
     image: ghcr.io/sufengx/vera/gateway:${VERA_IMAGE_TAG:-latest}
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      GATEWAY_UPSTREAM: http://model-mock:9000
+      GATEWAY_UPSTREAM: ${GATEWAY_UPSTREAM:-http://host.docker.internal:9000}
       CLICKHOUSE_ADDR: http://clickhouse:8123
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: vera
@@ -42,7 +37,6 @@ services:
       CONTAINER_ID: gateway-local
     depends_on:
       - clickhouse
-      - model-mock
 
   detector:
     image: ghcr.io/sufengx/vera/detector:${VERA_IMAGE_TAG:-latest}
@@ -77,12 +71,6 @@ services:
       DETECTOR_BASELINE_MINUTES: ${DETECTOR_BASELINE_MINUTES:-30}
     depends_on:
       - clickhouse
-
-  loadgen:
-    image: ghcr.io/sufengx/vera/simulator:${VERA_IMAGE_TAG:-latest}
-    command: python send_events.py --target http://gateway:8080/v1/predict --rate 20 --duration 30
-    depends_on:
-      - gateway
 
 volumes:
   ch-data:
