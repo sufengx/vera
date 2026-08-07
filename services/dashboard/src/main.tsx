@@ -19,7 +19,6 @@ const CYAN = "#06b6d4";
 const RED = "#ef4444";
 const GREEN = "#10b981";
 const GRAY_LINE = "#cbd5e1";
-const GRAY_BAR = "#4b5563";
 const TICK = { fill: "#64748b", fontSize: 11 };
 const TOOLTIP_STYLE = {
   background: "rgba(17,19,24,0.95)",
@@ -386,7 +385,7 @@ function DistChart({ rows, t }: { rows: DistRow[]; t: (k: string) => string }) {
   const legend = (
     <span className="flex items-center gap-3 text-[0.7rem] text-slate-400">
       <span className="flex items-center gap-1.5"><span className="h-1 w-4 rounded" style={{ background: PURPLE }} />{t("currentWin")}</span>
-      <span className="flex items-center gap-1.5"><span className="h-1 w-4 rounded" style={{ background: GRAY_BAR }} />{t("baselineWin")}</span>
+      <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded" style={{ background: GRAY_LINE }} />{t("baselineWin")}</span>
     </span>
   );
   return (
@@ -400,7 +399,7 @@ function DistChart({ rows, t }: { rows: DistRow[]; t: (k: string) => string }) {
             <YAxis tick={TICK} axisLine={false} tickLine={false} width={40} />
             <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
             <Bar dataKey="current" fill={PURPLE} fillOpacity={0.65} maxBarSize={14} />
-            <Bar dataKey="baseline" fill={GRAY_BAR} fillOpacity={0.7} maxBarSize={14} />
+            <Line type="monotone" dataKey="baseline" stroke={GRAY_LINE} strokeWidth={2} dot={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>
