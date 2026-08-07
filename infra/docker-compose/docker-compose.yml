@@ -83,7 +83,7 @@ services:
 
   loadgen:
     build: ../../tools/simulator
-    command: python send_events.py --target http://gateway:8080/v1/predict --rate 20 --duration 30
+    command: python send_events.py --target http://gateway:8080/v1/predict --rate 20 --duration 86400
     depends_on:
       - gateway
 
