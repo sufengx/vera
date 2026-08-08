@@ -31,8 +31,9 @@ Whether it is caused by data distribution changes, model degradation, prompt cha
   - Batch compressed event ingestion into ClickHouse.
   - Designed for large-scale OLAP analysis and real-time detection.
 
-- **Built-in drift detection**
+- **Built-in drift detection & root cause analysis**
   - KS test and PSI based drift engine over event signals.
+  - Top-K feature impacts and segment contributions with confidence scores.
   - Webhook alerting and a big-screen live dashboard.
 
 - **Enterprise-ready architecture**
@@ -207,6 +208,36 @@ A signal is *drifted* when its score crosses the threshold. Results are stored i
 * **Alerting.** Alerts are debounced per metric: one alert per anomaly episode, re-armed only after the signal recovers, plus a cooldown (`ALERT_COOLDOWN_MINUTES`, default 15 min) to avoid flooding.
 
 All knobs (windows, thresholds, scan interval, webhook) — see [Detector Configuration](DEPLOYMENT.md#detector-configuration). Dashboard walk-through — [Dashboard Usage](DEPLOYMENT.md#dashboard-usage). See drift in action with the [Drift Demo](TESTING.md#drift-demo).
+
+---
+
+# Root Cause Analysis
+
+Drift detection answers *whether* behavior changed; the root cause engine (`services/rootcause`) answers *what* changed and *where* it concentrates.
+
+## Feature impact
+
+The engine compares the same current/baseline windows as the detector and ranks every signal by impact:
+
+```
+score = PSI + 0.35 × Cohen's d
+```
+
+Each feature in the report carries its PSI, KS p-value, mean/std shift, effect size, drift direction (up / down / spread), and a confidence score (`min(1, n/200) × min(1, score/0.5)`).
+
+## Segment contribution
+
+Beyond overall shifts, the engine groups events by dimension — `client_id`, `route`, `model_version` — and locates the segments where drift concentrates, e.g. "latency up 4×, driven by client ci-b":
+
+```
+score = share × |segment shift − overall shift| / |overall shift|
+```
+
+Segments new to the current window are flagged with their shift measured against the overall baseline mean. Only already-drifted features are segmented, so non-drifting signals produce no noise.
+
+## Report
+
+The API returns a machine-readable report (features ranked, segments ranked, bilingual summary) and the dashboard renders it with an export-to-JSON button. Windows with too few events return `insufficient_data` instead of an error. See [Root Cause Analysis](DEPLOYMENT.md#root-cause-analysis) for the API reference and configuration.
 
 ---
 
