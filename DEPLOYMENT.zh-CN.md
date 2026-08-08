@@ -144,10 +144,12 @@ Vera 无需 SDK、无需改代码。你的模型继续跑在自己的地址上�
 将 `GATEWAY_UPSTREAM` 设为你的模型服务地址——零代码部署写在 compose 旁的 `.env`，源码部署用 compose override：
 
 ```bash
-# 零代码部署：在 docker-compose.release.yml 旁边写 .env
-echo "GATEWAY_UPSTREAM=http://your-model-host:9000" >> .env
+# 零代码部署：复制模板，然后编辑 .env 中的 GATEWAY_UPSTREAM
+cp .env.example .env
 docker compose -f docker-compose.release.yml up -d
 ```
+
+`.env.example` 随发布包一起提供，里面注释了所有可配置项——检测窗口、告警 webhook、根因报告规模、镜像版本等。只改你关心的项即可，其余保持默认。
 
 ```yaml
 # 源码部署：docker-compose.override.yml

@@ -144,10 +144,12 @@ your app ──► Vera Gateway :8080 ──► your model service (unchanged)
 Set `GATEWAY_UPSTREAM` to your model service — a `.env` next to the compose file (zero-code install), or a compose override (source install):
 
 ```bash
-# zero-code install: .env beside docker-compose.release.yml
-echo "GATEWAY_UPSTREAM=http://your-model-host:9000" >> .env
+# zero-code install: copy the template, then edit GATEWAY_UPSTREAM in .env
+cp .env.example .env
 docker compose -f docker-compose.release.yml up -d
 ```
+
+`.env.example` ships with the release bundle and documents every configurable option — drift windows, alert webhook, root cause report size, image version. Only edit what you care about; everything else keeps its default.
 
 ```yaml
 # source install: docker-compose.override.yml

@@ -13,7 +13,7 @@ VERA_IMAGE_TAG="${VERA_IMAGE_TAG:-latest}"
 VERA_DIR="${VERA_DIR:-./vera}"
 # 安装源：默认 GitHub raw；内网环境可指向内部 HTTP 镜像
 BASE="${VERA_SRC:-https://raw.githubusercontent.com/sufengx/vera/${VERA_REF}}"
-FILES="infra/docker-compose/docker-compose.release.yml infra/docker-compose/init/001_events.sql infra/docker-compose/init/002_drift.sql"
+FILES="infra/docker-compose/docker-compose.release.yml infra/docker-compose/init/001_events.sql infra/docker-compose/init/002_drift.sql infra/docker-compose/.env.example"
 
 command -v docker >/dev/null 2>&1 || { echo "错误：未找到 docker，请先安装 Docker"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "错误：需要 docker compose v2"; exit 1; }
@@ -23,6 +23,7 @@ cd "${VERA_DIR}"
 curl -fsSL "${BASE}/infra/docker-compose/docker-compose.release.yml" -o docker-compose.release.yml
 curl -fsSL "${BASE}/infra/docker-compose/init/001_events.sql" -o init/001_events.sql
 curl -fsSL "${BASE}/infra/docker-compose/init/002_drift.sql" -o init/002_drift.sql
+curl -fsSL "${BASE}/infra/docker-compose/.env.example" -o .env.example
 
 export VERA_IMAGE_TAG
 docker compose -f docker-compose.release.yml pull
@@ -35,7 +36,9 @@ Vera 已启动：
   推理网关   http://localhost:8080/v1/predict
   ClickHouse http://localhost:8123 (default/vera)
 接入模型：
-  echo "GATEWAY_UPSTREAM=http://你的模型:9000" >> ${VERA_DIR}/.env && cd ${VERA_DIR} && docker compose -f docker-compose.release.yml up -d
+  cd ${VERA_DIR} && cp .env.example .env
+  # 编辑 .env，把 GATEWAY_UPSTREAM 改成你的模型服务地址，然后：
+  cd ${VERA_DIR} && docker compose -f docker-compose.release.yml up -d
 管理：
   停止   cd ${VERA_DIR} && docker compose -f docker-compose.release.yml down
   日志   cd ${VERA_DIR} && docker compose -f docker-compose.release.yml logs -f detector
