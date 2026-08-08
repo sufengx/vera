@@ -64,24 +64,24 @@ const I18N: Record<string, Record<string, string>> = {
     connecting: "正在连接数据源…",
     drift: "漂移",
     normal: "正常",
-    threshold: "threshold",
+    threshold: "阈值",
     currentWin: "当前窗口",
     baselineWin: "基准窗口",
     metricEvents: "事件量",
     metricP50: "P50延迟",
     metricP99: "P99延迟",
     metricDrift: "漂移信号",
-    helpOverview: "事件量=模型最近一小时处理的请求数；P50/P99=一半/99% 的请求在多长时间内完成；漂移信号=当前有几个行为异常。",
-    helpSignals: "系统定期对比模型最近行为和基准行为：绿点=正常；红点=行为偏移超过阈值，会触发告警。",
-    helpTraffic: "每分钟模型请求数。陡升陡降可能意味着流量异常或系统故障。",
-    helpDistPred: "模型预测值的分布：紫色=当前窗口，灰色=基准窗口。明显错开即视为行为改变。",
-    helpDistConf: "模型置信度分布。突然变得过于自信或犹豫也是异常信号。",
-    helpLatency: "P50=一半请求在此时间内完成，P99=99% 的请求在此时间内完成。P99 升高说明系统在变慢。",
-    helpEvents: "最近触发的漂移事件。",
+    helpOverview: "事件量=模型最近一小时处理了多少次请求；P50/P99=一半/99% 的请求处理完成需要多久，数字越大说明越慢；漂移信号=模型行为和过去明显不一样的情况有几个。",
+    helpSignals: "系统定期把模型最近的表现和过去一段时间（基准）做对比：绿点=正常；红点=差别超过判定线（阈值），说明模型行为可能变了，会记录一条异常事件。",
+    helpTraffic: "每分钟模型的请求数量。突然大幅上升或下降，可能意味着流量异常或系统故障。",
+    helpDistPred: "模型每次预测会给一个数值，这里把所有预测值画成曲线：紫色=最近这段时间，灰色=过去的（基准）。两条线差得越远，说明行为变化越明显。",
+    helpDistConf: "置信度=模型对自己给出的预测有多有把握（0~100%）。正常时相对稳定；突然变得特别有把握或特别没把握，也可能是异常信号。",
+    helpLatency: "延迟=一次请求处理完成需要多久。P50=一半请求的耗时，P99=99% 请求的耗时（最慢的情况）。P99 变大说明系统在变慢。",
+    helpEvents: "模型行为出现异常时生成的记录（时间+哪项指标异常），可据此初步判断问题出在哪里。",
     viewOverview: "总览",
     viewRootcause: "根因分析",
     rcTitle: "根因分析报告",
-    rcSummary: "可解释摘要",
+    rcSummary: "分析摘要",
     rcFeatures: "特征贡献 Top-",
     rcSegments: "子群贡献 Top-",
     rcExport: "导出 JSON",
@@ -105,6 +105,12 @@ const I18N: Record<string, Record<string, string>> = {
     rcHideTechDetails: "收起",
     rcPossibleCauses: "可能原因",
     rcCausesDisclaimer: "以下为基于漂移模式的推测，仅供参考",
+    rcWindowInfo: "分析窗口",
+    rcHelpFeatures: "特征=用来判断模型是否健康的指标（预测值、置信度、延迟等）。分数越高，说明该指标和过去差别越大，越可能是异常的原因。",
+    rcHelpSegments: "子群=按某个维度（比如客户端）把请求分组。这里列出变化最大的几个群体，帮你定位是谁导致了异常。",
+    rcHelpSummary: "把分析结果翻译成人话：这段时间发生了什么、通过哪些信号看出来的、最可能的原因是什么。",
+    rcHelpWindow: "当前窗口=最近几分钟的数据；基准窗口=更早的一段数据，作为对照。系统对比这两段数据，判断模型行为有没有变化。",
+    rcHelpCauses: "根据数据变化规律推测的可能原因，帮你缩小排查范围。仅供参考，需要结合实际情况确认。",
   },
   en: {
     title: "Vera AI Observability & Drift Detection",
@@ -134,13 +140,13 @@ const I18N: Record<string, Record<string, string>> = {
     metricP50: "P50 Latency",
     metricP99: "P99 Latency",
     metricDrift: "Drifted",
-    helpOverview: "Events = requests handled in the last hour; P50/P99 = response speed; Drifted = abnormal signals found.",
-    helpSignals: "The system compares recent model behavior against a baseline. Red = behavior shifted beyond threshold, alert fired.",
-    helpTraffic: "Requests per minute. Sharp spikes or drops may indicate unusual load or faults.",
-    helpDistPred: "Model prediction distribution: purple = current window, gray = baseline. Clear separation means behavior change.",
-    helpDistConf: "Model confidence distribution. Sudden over-confidence or hesitation is a warning sign.",
-    helpLatency: "P50 = half of requests complete within this time; P99 = 99% do. A rising P99 means the system is slowing.",
-    helpEvents: "Recently fired drift events.",
+    helpOverview: "Events = how many requests the model handled in the last hour. P50/P99 = how long half / 99% of requests take to finish (bigger = slower). Drifted = how many signals behave noticeably differently from the past.",
+    helpSignals: "The system regularly compares the model's recent behavior with its past behavior (baseline): green = normal; red = the difference exceeds the threshold, meaning the model's behavior may have changed — an event is recorded.",
+    helpTraffic: "Model requests per minute. A sudden spike or drop may mean unusual traffic or a system fault.",
+    helpDistPred: "Each prediction is a number; this chart shows them all. Purple = the recent period, gray = the past (baseline). The further the two lines separate, the more the behavior has changed.",
+    helpDistConf: "Confidence = how sure the model is about each prediction (0–100%). Normally stable; suddenly very confident or very unsure is also a warning sign.",
+    helpLatency: "Latency = how long a request takes to finish. P50 = half of requests, P99 = 99% (the slowest cases). A rising P99 means the system is slowing down.",
+    helpEvents: "Records created when the model's behavior drifts from normal (time + which signal was abnormal), to give a first idea of where the problem is.",
     viewOverview: "Overview",
     viewRootcause: "Root Cause",
     rcTitle: "Root Cause Report",
@@ -168,6 +174,12 @@ const I18N: Record<string, Record<string, string>> = {
     rcHideTechDetails: "Hide",
     rcPossibleCauses: "Possible causes",
     rcCausesDisclaimer: "Inferred from drift patterns, for reference only",
+    rcWindowInfo: "Analysis window",
+    rcHelpFeatures: "Features are the metrics used to judge the model's health (prediction, confidence, latency…). A higher score means the metric differs more from the past — more likely the cause.",
+    rcHelpSegments: "Segments group requests by a dimension (e.g. client). These are the groups that changed the most — who caused the drift.",
+    rcHelpSummary: "A plain-language explanation of the analysis: what happened, which signals showed it, and the most likely cause.",
+    rcHelpWindow: "Current window = data from the last few minutes; baseline window = earlier data used as the reference. The system compares the two to detect changes.",
+    rcHelpCauses: "Possible causes inferred from the drift pattern, to narrow down your investigation. For reference — confirm against the facts.",
   },
 };
 
@@ -824,7 +836,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
     <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
       <div className="flex min-h-0 flex-col gap-5">
         <GlassCard className="min-h-0 flex-1 flex flex-col">
-          <PanelTitle title={`${t("rcFeatures")}${Math.min(rc.features.length, 5)}`} />
+          <PanelTitle title={`${t("rcFeatures")}${Math.min(rc.features.length, 5)}`} help={t("rcHelpFeatures")} />
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
             {rc.features.length ? (
               rc.features.slice(0, 5).map((f) => <NarrativeFeatureCard key={f.name} f={f} t={t} lang={lang} />)
@@ -834,7 +846,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
           </div>
         </GlassCard>
         <GlassCard>
-          <PanelTitle title={t("signalAnalysis")} />
+          <PanelTitle title={t("signalAnalysis")} help={t("helpSignals")} />
           <div className="flex flex-col gap-2">
             {signals.length ? (
               signals.map((s) => (
@@ -854,13 +866,15 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
       </div>
       <div className="grid min-h-0 grid-rows-[3fr_2fr] gap-5">
         <GlassCard className="min-h-0 flex flex-col">
-          <PanelTitle title={t("rcSummary")} />
+          <PanelTitle title={t("rcSummary")} help={t("rcHelpSummary")} />
           <p className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
             {rc.summary[lang]}
           </p>
         </GlassCard>
         <GlassCard className="flex flex-col justify-between">
-          <div className="space-y-2.5 font-mono text-xs text-slate-400">
+          <div>
+            <PanelTitle title={t("rcWindowInfo")} help={t("rcHelpWindow")} />
+            <div className="space-y-2.5 font-mono text-xs text-slate-400">
             <div className="flex justify-between">
               <span>{t("rcCurrentWin")}</span>
               <span className="text-slate-200">{fmtTs(rc.window.current[0])} ~ {fmtTs(rc.window.current[1])}</span>
@@ -873,6 +887,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
               <span>{t("rcEvents")}</span>
               <span className="text-slate-200">{rc.n_current.toLocaleString()} / {rc.n_baseline.toLocaleString()}</span>
             </div>
+            </div>
           </div>
           <button
             onClick={exportJson}
@@ -884,7 +899,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
       </div>
       <div className="flex min-h-0 flex-col gap-5">
         <GlassCard className="min-h-0 flex-1 flex flex-col">
-          <PanelTitle title={`${t("rcSegments")}${Math.min(rc.segments.length, 5)}`} />
+          <PanelTitle title={`${t("rcSegments")}${Math.min(rc.segments.length, 5)}`} help={t("rcHelpSegments")} />
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
             {rc.segments.length ? (
               rc.segments.slice(0, 5).map((s) => (
@@ -896,7 +911,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
           </div>
         </GlassCard>
         <GlassCard className="min-h-0 flex-1 flex flex-col">
-          <PanelTitle title={t("rcPossibleCauses")} />
+          <PanelTitle title={t("rcPossibleCauses")} help={t("rcHelpCauses")} />
           <div className="min-h-0 flex-1 overflow-y-auto space-y-2">
             {rc.causes?.length ? (
               <>
