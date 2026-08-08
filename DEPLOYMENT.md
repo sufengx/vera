@@ -226,6 +226,23 @@ Out of the box it detects distribution drift on `prediction` (PSI), `confidence`
 
 ---
 
+# Detection Signals
+
+Each inference request produces an event in `vera.events`. The detector compares a *current window* (the last N minutes) against a *baseline window* (an M-minute slice ending K minutes ago) every scan cycle, and flags signals whose distribution shifted:
+
+| Signal       | Test | Threshold      |
+| ------------ | ---- | -------------- |
+| `prediction` | PSI  | PSI > 0.1      |
+| `confidence` | KS   | p-value < 0.05 |
+| `latency_ms` | KS   | p-value < 0.05 |
+
+* **KS test (confidence, latency).** Computes the largest distance between the two distributions' cumulative curves; the p-value is the probability that both come from the same distribution. p < 0.05 means the shift is unlikely to be random.
+* **PSI (prediction).** Buckets both distributions into the same bins and sums `(actual − expected) × ln(actual / expected)` per bin. PSI = 0 means identical distributions; > 0.1 is a significant shift.
+* **Empty baseline.** A baseline window with no events yet (e.g. a fresh environment) is recorded as *no drift* instead of skipped, so every scan produces a result.
+* **Alerting.** Alerts are debounced per metric — one per anomaly episode, re-armed only after recovery — plus a cooldown (`ALERT_COOLDOWN_MINUTES`, default 15 min) to avoid flooding.
+
+---
+
 # Detector Configuration
 
 | Environment variable | Default | Meaning                                  |
