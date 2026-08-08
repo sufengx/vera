@@ -14,6 +14,10 @@ export default defineConfig({
         rewrite: (p) => p.replace(/^\/api/, ""),
         headers: { Authorization: "Basic ZGVmYXVsdDp2ZXJh" },
       },
+      "/rc": {
+        target: "http://localhost:8100",
+        changeOrigin: true,
+      },
     },
   },
 });

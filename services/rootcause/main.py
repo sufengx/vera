@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException
 
 import analyze
+import narrative
 import store as store_mod
 from config import Config
 
@@ -106,6 +107,7 @@ def analyze_report(cfg, st, current, baseline, model, route, top_k, dims):
         "features": feats,
         "segments": segs,
         "summary": analyze.summarize(feats, segs, n_cur, n_base, window),
+        "causes": narrative.possible_causes(all_feats, segs),
     }
 
 
@@ -129,6 +131,8 @@ def analyze_segments(cfg, st, current, baseline, model, route, samples, dims, dr
             base_mean = float(expected.mean()) if expected.size else 0.0
             for row in analyze.segments(cur, base, overall, base_mean):
                 row.update(dimension=dim, feature=f)
+                row["narrative"] = {"zh": narrative.segment_story(row, base_mean, "zh"),
+                                    "en": narrative.segment_story(row, base_mean, "en")}
                 rows.append(row)
     rows.sort(key=lambda r: (r["score"], abs(r["contribution"])), reverse=True)
     return rows[:top_k]

@@ -101,6 +101,10 @@ const I18N: Record<string, Record<string, string>> = {
     rcSpread: "变宽",
     rcNew: "新增",
     rcScore: "贡献分",
+    rcTechDetails: "查看技术细节",
+    rcHideTechDetails: "收起",
+    rcPossibleCauses: "可能原因",
+    rcCausesDisclaimer: "以下为基于漂移模式的推测，仅供参考",
   },
   en: {
     title: "Vera AI Observability & Drift Detection",
@@ -160,6 +164,10 @@ const I18N: Record<string, Record<string, string>> = {
     rcSpread: "spread",
     rcNew: "new",
     rcScore: "score",
+    rcTechDetails: "Technical details",
+    rcHideTechDetails: "Hide",
+    rcPossibleCauses: "Possible causes",
+    rcCausesDisclaimer: "Inferred from drift patterns, for reference only",
   },
 };
 
@@ -261,18 +269,22 @@ type RCFeature = {
   name: string; psi: number; ks_pvalue: number; delta_mean: number;
   delta_std: number; effect_size: number; direction: "up" | "down" | "spread";
   score: number; confidence: number;
+  narrative: { zh: string; en: string };
 };
 type RCSegment = {
   dimension: string; value: string; feature: string; n_current: number;
   share: number; delta_mean: number; contribution: number; deviation: number;
   score: number; confidence: number; new: boolean;
+  narrative: { zh: string; en: string };
 };
+type RCCause = { zh: string; en: string };
 type RCReport = {
   status: "ok" | "insufficient_data";
   window: { current: [string, string]; baseline: [string, string] };
   n_baseline: number; n_current: number;
   features: RCFeature[]; segments: RCSegment[];
   summary: { zh: string; en: string };
+  causes: RCCause[];
 };
 
 function useRootCauseData(active: boolean, intervalMs: number): RCReport | null {
@@ -645,7 +657,7 @@ function LangToggle({ lang, setLang }: { lang: string; setLang: (v: "zh" | "en")
 }
 
 function TopBar({ t, lang, setLang, view, setView, data }: {
-  t: (k: string) => string; lang: string; setLang: (v: "zh" | "en") => void;
+  t: (k: string) => string; lang: "zh" | "en"; setLang: (v: "zh" | "en") => void;
   view: "overview" | "rootcause"; setView: (v: "overview" | "rootcause") => void; data: DashData;
 }) {
   const nDrifted = data.signals.filter((s) => s.drifted).length;
@@ -708,60 +720,77 @@ function TopBar({ t, lang, setLang, view, setView, data }: {
 }
 
 /* ── 根因分析视图 ──────────────────────────────────────── */
-const sign = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
-const dirLabel = (d: "up" | "down" | "spread", t: (k: string) => string) =>
-  d === "up" ? t("rcUp") : d === "down" ? t("rcDown") : t("rcSpread");
+function _severity(f: RCFeature): "significant" | "moderate" | "minor" {
+  if (f.psi > 0.25) return "significant";
+  if (f.psi > 0.1) return "moderate";
+  return "minor";
+}
+const _SEV: Record<string, string> = {
+  significant: "bg-violet-500/15 text-violet-300",
+  moderate: "bg-amber-500/15 text-amber-300",
+  minor: "bg-slate-500/15 text-slate-400",
+};
+const _DIR_X: Record<string, string> = {
+  up: "↑", down: "↓", spread: "⇿",
+};
 
-function RcFeatureRow({ f, max, t }: { f: RCFeature; max: number; t: (k: string) => string }) {
-  const width = Math.max((f.score / Math.max(max, 1e-9)) * 100, 2);
+function NarrativeFeatureCard({ f, t, lang }: { f: RCFeature; t: (k: string) => string; lang: "zh" | "en" }) {
+  const [x, setX] = useState(false);
+  const sev = _severity(f);
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-slate-100">{f.name}</span>
         <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold ${
-            f.direction === "spread" ? "bg-slate-500/15 text-slate-400" : "bg-vera-red/15 text-vera-red"
-          }`}>{dirLabel(f.direction, t)}</span>
-          <span className="rounded-full bg-violet-500/15 px-2.5 py-0.5 text-[0.65rem] font-semibold text-violet-300">
-            {(f.confidence * 100).toFixed(0)}%
-          </span>
+          <span className={`rounded-full px-2 py-0.5 text-[0.6rem] font-bold ${_SEV[sev]}`}>{sev === "significant" ? "★" : sev === "moderate" ? "☆" : "·"}</span>
+          <span className="text-sm font-semibold text-slate-100">{f.name}</span>
+          <span className="text-xs text-slate-500">{_DIR_X[f.direction]}</span>
         </div>
+        <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-[0.65rem] font-semibold text-violet-300">{(f.confidence * 100).toFixed(0)}%</span>
       </div>
-      <div className="mt-2 flex justify-between font-mono text-xs text-slate-400">
-        <span>{t("rcPsi")} {f.psi.toFixed(2)}</span>
-        <span>{t("rcDeltaMean")} {sign(f.delta_mean)}</span>
-        <span>{t("rcEffect")} {f.effect_size.toFixed(2)}</span>
+      <p className="mt-2 text-xs leading-relaxed text-slate-300">{f.narrative?.[lang] ?? f.name}</p>
+      <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-500" style={{ width: `${Math.max(f.score * 100, 2)}%` }} />
       </div>
-      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-500" style={{ width: `${width}%` }} />
-      </div>
+      <button className="mt-2 text-[0.65rem] text-slate-500 hover:text-slate-300 transition-colors" onClick={() => setX(!x)}>
+        {x ? t("rcHideTechDetails") : t("rcTechDetails")}
+      </button>
+      {x && (
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[0.6rem] text-slate-500">
+          <span>PSI {f.psi.toFixed(2)}</span><span>Cohen&apos;s d {f.effect_size.toFixed(2)}</span>
+          <span>KS p {f.ks_pvalue.toExponential(1)}</span><span>{t("rcDeltaMean")} {f.delta_mean >= 0 ? "+" : ""}{f.delta_mean.toFixed(3)}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-function RcSegmentRow({ s, max, t }: { s: RCSegment; max: number; t: (k: string) => string }) {
-  const width = Math.max((s.score / Math.max(max, 1e-9)) * 100, 2);
+function NarrativeSegmentCard({ s, t, lang }: { s: RCSegment; t: (k: string) => string; lang: "zh" | "en" }) {
+  const [x, setX] = useState(false);
+  const contribPct = Math.round(Math.abs(s.contribution) * 100);
+  const sev = contribPct >= 70 ? "significant" : contribPct >= 30 ? "moderate" : "minor";
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-semibold text-slate-100">
-          {s.dimension}={s.value}
-          {s.new && (
-            <span className="ml-2 rounded-full bg-cyan-500/15 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-cyan-300">
-              {t("rcNew")}
-            </span>
-          )}
-        </span>
-        <span className="font-mono text-xs text-slate-400">{(s.share * 100).toFixed(0)}%</span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2 py-0.5 text-[0.6rem] font-bold ${_SEV[sev]}`}>{sev === "significant" ? "★" : sev === "moderate" ? "☆" : "·"}</span>
+          <span className="truncate text-sm font-semibold text-slate-100">{s.dimension}={s.value}</span>
+          {s.new && <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-[0.6rem] font-bold uppercase text-cyan-300">{t("rcNew")}</span>}
+        </div>
+        <span className="font-mono text-xs text-slate-400">{contribPct}%</span>
       </div>
-      <div className="mt-1.5 flex justify-between font-mono text-xs text-slate-400">
-        <span>{s.feature}</span>
-        <span>{t("rcContrib")} {(s.contribution * 100).toFixed(0)}%</span>
-        <span>{t("rcConfidence")} {(s.confidence * 100).toFixed(0)}%</span>
+      <p className="mt-2 text-xs leading-relaxed text-slate-300">{s.narrative?.[lang] ?? `${s.dimension}=${s.value}`}</p>
+      <div className="mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 transition-all duration-500" style={{ width: `${Math.max(s.score * 100, 2)}%` }} />
       </div>
-      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-        <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 transition-all duration-500" style={{ width: `${width}%` }} />
-      </div>
+      <button className="mt-2 text-[0.65rem] text-slate-500 hover:text-slate-300 transition-colors" onClick={() => setX(!x)}>
+        {x ? t("rcHideTechDetails") : t("rcTechDetails")}
+      </button>
+      {x && (
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[0.6rem] text-slate-500">
+          <span>{t("rcShare")} {(s.share * 100).toFixed(0)}%</span><span>{t("rcContrib")} {(s.contribution * 100).toFixed(0)}%</span>
+          <span>{t("rcConfidence")} {(s.confidence * 100).toFixed(0)}%</span><span>{t("rcDeltaMean")} {s.delta_mean >= 0 ? "+" : ""}{s.delta_mean.toFixed(3)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -791,8 +820,6 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
     a.click();
     URL.revokeObjectURL(a.href);
   };
-  const maxF = Math.max(...rc.features.map((f) => f.score), 1e-9);
-  const maxS = Math.max(...rc.segments.map((s) => s.score), 1e-9);
   return (
     <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
       <div className="flex min-h-0 flex-col gap-5">
@@ -800,7 +827,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
           <PanelTitle title={`${t("rcFeatures")}${Math.min(rc.features.length, 5)}`} />
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
             {rc.features.length ? (
-              rc.features.slice(0, 5).map((f) => <RcFeatureRow key={f.name} f={f} max={maxF} t={t} />)
+              rc.features.slice(0, 5).map((f) => <NarrativeFeatureCard key={f.name} f={f} t={t} lang={lang} />)
             ) : (
               <EmptyState text={t("rcInsufficient")} />
             )}
@@ -828,7 +855,7 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
       <div className="grid min-h-0 grid-rows-[3fr_2fr] gap-5">
         <GlassCard className="min-h-0 flex flex-col">
           <PanelTitle title={t("rcSummary")} />
-          <p className="min-h-0 flex-1 overflow-y-auto text-sm leading-relaxed text-slate-200">
+          <p className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
             {rc.summary[lang]}
           </p>
         </GlassCard>
@@ -861,17 +888,28 @@ function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lan
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
             {rc.segments.length ? (
               rc.segments.slice(0, 5).map((s) => (
-                <RcSegmentRow key={`${s.dimension}-${s.value}-${s.feature}`} s={s} max={maxS} t={t} />
+                <NarrativeSegmentCard key={`${s.dimension}-${s.value}-${s.feature}`} s={s} t={t} lang={lang} />
               ))
             ) : (
               <EmptyState text={t("rcNoData")} />
             )}
           </div>
         </GlassCard>
-        <GlassCard>
-          <PanelTitle title={`${t("rcTitle")} · ${t("rcScore")}`} />
-          <div className="text-xs leading-relaxed text-slate-500">
-            {lang === "zh" ? "贡献分越高，说明该特征/子群越能解释漂移；置信度 = 样本充分度 × 差异强度。" : "Higher score = the feature/segment explains more of the drift; confidence = sample sufficiency × shift magnitude."}
+        <GlassCard className="min-h-0 flex-1 flex flex-col">
+          <PanelTitle title={t("rcPossibleCauses")} />
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-2">
+            {rc.causes?.length ? (
+              <>
+                <p className="text-[0.65rem] text-slate-500">{t("rcCausesDisclaimer")}</p>
+                {rc.causes.map((c, i) => (
+                  <div key={i} className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2 text-xs text-slate-300">
+                    {c[lang]}
+                  </div>
+                ))}
+              </>
+            ) : (
+              <EmptyState text={t("rcNoData")} />
+            )}
           </div>
         </GlassCard>
       </div>

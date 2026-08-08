@@ -117,7 +117,8 @@ def test_summarize_mentions_top_feature_and_segment():
     b = rng.normal(0.9, 0.1, 300)
     feats = analyze.features({"confidence": (b, a)})
     segs = [{"feature": "confidence", "dimension": "client_id", "value": "client-7",
-             "share": 0.8, "contribution": 0.9, "score": 0.5, "confidence": 0.9}]
+             "share": 0.8, "contribution": 0.9, "score": 0.5, "confidence": 0.9,
+             "new": False, "delta_mean": 0.4, "baseline_mean": 0.5}]
     window = {"current": ["2026-01-02 03:10:00", "2026-01-02 03:20:00"],
               "baseline": ["2026-01-02 03:00:00", "2026-01-02 03:10:00"]}
     s = analyze.summarize(feats, segs, 300, 300, window)
@@ -132,7 +133,8 @@ def test_summarize_omits_noise_segment():
     b = rng.normal(0.9, 0.1, 300)
     feats = analyze.features({"confidence": (b, a)})
     segs = [{"feature": "confidence", "dimension": "client_id", "value": "client-14",
-             "share": 0.02, "contribution": 0.03, "score": 0.011, "confidence": 0.1}]
+             "share": 0.02, "contribution": 0.03, "score": 0.011, "confidence": 0.1,
+             "new": False, "delta_mean": 0.01, "baseline_mean": 0.5}]
     window = {"current": ["2026-01-02 03:10:00", "2026-01-02 03:20:00"],
               "baseline": ["2026-01-02 03:00:00", "2026-01-02 03:10:00"]}
     s = analyze.summarize(feats, segs, 300, 300, window)

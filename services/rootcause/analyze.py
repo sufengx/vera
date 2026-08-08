@@ -2,6 +2,7 @@
 import numpy as np
 
 import drift
+import narrative
 
 _FEATURE_WEIGHT = 0.35  # 合成分里均值位移的权重
 _MAX_EFFECT = 3.0  # 效应量封顶
@@ -19,7 +20,7 @@ def features(samples):
         ks = drift.ks_pvalue(actual, expected)
         effect = _effect_size(actual, expected)
         score = psi + _FEATURE_WEIGHT * min(abs(effect), _MAX_EFFECT)
-        rows.append({
+        row = {
             "name": name,
             "psi": psi,
             "ks_pvalue": ks,
@@ -30,7 +31,10 @@ def features(samples):
             "score": score,
             "confidence": _confidence(min(actual.size, expected.size), score),
             "drifted": psi > 0.1 or ks < 0.05,
-        })
+        }
+        row["narrative"] = {"zh": narrative.feature_story(row, "zh"),
+                            "en": narrative.feature_story(row, "en")}
+        rows.append(row)
     rows.sort(key=lambda r: r["score"], reverse=True)
     return rows
 
@@ -63,6 +67,7 @@ def segments(cur, base, overall_shift, base_mean=0.0, top_n=50):
             "n_current": n,
             "share": round(share, 4),
             "delta_mean": shift,
+            "baseline_mean": mb,
             "contribution": round(max(-1.0, min(1.0, share * shift / overall_shift)), 4),
             "deviation": shift - overall_shift,
             "score": round(share * abs(shift - overall_shift) / abs(overall_shift), 4),
@@ -74,26 +79,8 @@ def segments(cur, base, overall_shift, base_mean=0.0, top_n=50):
 
 
 def summarize(features, segments, n_cur, n_base, window):
-    """生成可解释报告的中英文摘要。"""
-    if not features:
-        return {"zh": "窗口数据不足，暂无可解释的根因分析。", "en": "Insufficient data for root cause analysis."}
-    f = features[0]
-    arrow = {"up": "上升", "down": "下降", "spread": "分布变宽"}[f["direction"]]
-    zh = (f"当前窗口（{window['current'][0]} ~ {window['current'][1]}，{n_cur} 条事件）"
-          f"对比基准窗口（{window['baseline'][0]} ~ {window['baseline'][1]}，{n_base} 条）："
-          f"主要漂移来自 {f['name']}（PSI={f['psi']:.2f}，均值{arrow} {abs(f['delta_mean']):.3g}，"
-          f"置信度 {f['confidence']:.0%}）")
-    en = (f"Current window ({window['current'][0]} ~ {window['current'][1]}, {n_cur} events) vs "
-          f"baseline ({window['baseline'][0]} ~ {window['baseline'][1]}, {n_base} events): "
-          f"primary drift from {f['name']} (PSI={f['psi']:.2f}, mean {f['direction']} "
-          f"{abs(f['delta_mean']):.3g}, confidence {f['confidence']:.0%})")
-    if segments and segments[0]["score"] >= 0.1:
-        s = segments[0]
-        zh += (f"；子群分析显示 {s['feature']} 的漂移集中在 {s['dimension']}={s['value']}"
-               f"（当前占比 {s['share']:.0%}，贡献 {s['contribution']:.0%}）")
-        en += (f"; segment analysis: {s['feature']} drift concentrates in {s['dimension']}={s['value']}"
-               f" ({s['share']:.0%} share, {s['contribution']:.0%} contribution)")
-    return {"zh": zh, "en": en}
+    """生成可解释报告的中英文叙事摘要。"""
+    return narrative.report_story(features, segments, n_cur, n_base, window)
 
 
 def _effect_size(a, b):
