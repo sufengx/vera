@@ -106,14 +106,14 @@ ClickHouse 存储
 * 失败事件重试机制
 * ClickHouse 认证支持
 * 漂移检测引擎（KS 检验 / PSI）与 webhook 告警
-* 实时指标与漂移状态的大屏仪表盘
+* 根因分析：top-K 特征与子群贡献
+* 实时指标、漂移状态与根因报告的大屏仪表盘
 * 基于 Docker Compose 的集成测试
 
 当前开发重点：
 
 * Python SDK
 * Embedding 漂移检测
-* 根因分析
 * LLM 可观测性支持
 * 自动化修复
 
@@ -134,10 +134,10 @@ ClickHouse 存储
 | `services/gateway`     | Go 推理网关：代理 + 事件采集 + 异步 ClickHouse 写入  | ✅ 可用     |
 | `services/detector`    | 漂移检测引擎（事件信号的 KS 检验 / PSI）             | ✅ 可用     |
 | `services/dashboard`   | 中英双语 React 大屏仪表盘：指标、图表与漂移告警      | ✅ 可用     |
+| `services/rootcause`   | 根因分析：top-K 特征 + 子群贡献                      | ✅ 可用     |
 | `tools/simulator`      | 模拟模型服务与流量生成器                             | ✅ 可用     |
 | `infra/docker-compose` | 本地开发环境                                         | ✅ 可用     |
 | `sdk/python`           | 应用级信号的 Python SDK                              | 🚧 规划中   |
-| `services/rootcause`   | 根因分析引擎                                         | 🚧 规划中   |
 | `charts/helm`          | Kubernetes 部署模板                                  | 🚧 规划中   |
 
 ---
@@ -236,9 +236,9 @@ charts/helm            # Kubernetes 部署
 
 * [x] 数据漂移检测
 * [x] 告警系统
+* [x] 根因分析
 * [ ] Python SDK
 * [ ] Embedding 漂移检测
-* [ ] 根因分析
 
 ## 阶段三：LLM 与 Agent 可观测性
 

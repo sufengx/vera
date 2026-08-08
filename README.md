@@ -106,14 +106,14 @@ Verified:
 * Failed event retry mechanism
 * ClickHouse authentication support
 * Drift detection engine (KS test / PSI) with webhook alerting
-* Big-screen dashboard for live metrics and drift status
+* Root cause analysis with top-K features and segment contributions
+* Big-screen dashboard for live metrics, drift status and root cause reports
 * Docker Compose based integration testing
 
 Current development focus:
 
 * Python SDK
 * Embedding drift detection
-* Root cause analysis
 * LLM observability support
 * Automated mitigation
 
@@ -134,10 +134,10 @@ Gateway latency benchmarks and 200/1000 req/s load tests (zero event loss) — s
 | `services/gateway`     | Go inference gateway: proxy + event collection + async ClickHouse sink | ✅ Available |
 | `services/detector`    | Drift detection engine (KS test / PSI on event signals)                | ✅ Available |
 | `services/dashboard`   | React big-screen dashboard: bilingual, metrics, charts and drift alerts | ✅ Available |
+| `services/rootcause`   | Root cause analysis: top-K features + segment contributions            | ✅ Available |
 | `tools/simulator`      | Mock model service and traffic generator                               | ✅ Available |
 | `infra/docker-compose` | Local development environment                                          | ✅ Available |
 | `sdk/python`           | Python SDK for application-level signals                               | 🚧 Planned  |
-| `services/rootcause`   | Root cause analysis engine                                             | 🚧 Planned  |
 | `charts/helm`          | Kubernetes deployment templates                                        | 🚧 Planned  |
 
 ---
@@ -238,9 +238,9 @@ charts/helm            # Kubernetes deployment
 
 * [x] Data drift detection
 * [x] Alerting system
+* [x] Root cause analysis
 * [ ] Python SDK
 * [ ] Embedding drift detection
-* [ ] Root cause analysis
 
 ## Phase 3: LLM & Agent Observability
 

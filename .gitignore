@@ -21,7 +21,7 @@ build/
 *.iml
 
 # Local tool settings
-.claude/settings.local.json
+.claude/
 
 # Local docs
 docs/

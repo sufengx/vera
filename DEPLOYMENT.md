@@ -53,6 +53,7 @@ All platforms access the same endpoints:
 | ------------ | -------------------------------- |
 | Dashboard    | http://localhost:8501            |
 | Gateway      | http://localhost:8080/v1/predict |
+| Root Cause   | http://localhost:8100            |
 | ClickHouse   | http://localhost:8123 (`default` / `vera`) |
 
 The release stack ships no mock or demo services — the dashboard shows only real data flowing through the gateway. Connect your model service (see [Connecting a Real AI Model](#connecting-a-real-ai-model)) and route inference calls through `http://<host>:8080/v1/predict`.
@@ -81,6 +82,7 @@ Prebuilt images (all tagged with the released version, plus `latest` on main):
 | --------------------------------------- | -------------------------------- |
 | `ghcr.io/sufengx/vera/gateway`          | Go inference gateway             |
 | `ghcr.io/sufengx/vera/detector`         | Drift detection engine           |
+| `ghcr.io/sufengx/vera/rootcause`        | Root cause analysis engine       |
 | `ghcr.io/sufengx/vera/dashboard`        | React big-screen dashboard       |
 
 ---
@@ -105,6 +107,7 @@ This starts:
 * `loadgen` - traffic generator (dev only)
 * `clickhouse` - event storage
 * `detector` - drift detection engine
+* `rootcause` - root cause analysis engine at http://localhost:8100
 * `dashboard` - big-screen dashboard at http://localhost:8501
 
 `model-mock` and `loadgen` are development helpers that generate synthetic traffic so you can evaluate Vera locally without a real model. They are not part of the production deployment above.
@@ -219,7 +222,7 @@ Alerts are debounced (one per anomaly episode, re-armed on recovery) and cooled 
 
 ## 7. What Vera covers today
 
-Out of the box it detects distribution drift on `prediction` (PSI), `confidence` (KS) and `latency_ms` (KS), with a live dashboard and webhook alerts. Not yet: SDK-based application signals, embedding drift, root-cause analysis, prompt/tool tracing — see [Roadmap](README.md#roadmap).
+Out of the box it detects distribution drift on `prediction` (PSI), `confidence` (KS) and `latency_ms` (KS), explains the drift with root-cause analysis (top-K features and segment contributions), and shows everything on a live dashboard with webhook alerts. Not yet: SDK-based application signals, embedding drift, prompt/tool tracing — see [Roadmap](README.md#roadmap).
 
 ---
 
@@ -239,6 +242,29 @@ Out of the box it detects distribution drift on `prediction` (PSI), `confidence`
 
 ---
 
+# Root Cause Analysis
+
+When drift is detected, the root-cause engine (`services/rootcause`) compares the current window against a baseline window and ranks every feature by impact (`PSI + 0.35 × Cohen's d`), then looks for the segment (client, route, model version…) where the drift concentrates. Each feature carries a confidence score; the report is available as JSON and the dashboard renders it with an export button.
+
+```bash
+# top-K features + segments for a model, last 5 minutes by default
+curl -s "http://localhost:8100/api/v1/rootcause?model=ctr&top_k=5"
+
+# explicit windows, filter by route, choose dimensions
+curl -s "http://localhost:8100/api/v1/rootcause?current_from=2026-08-08%2010:00:00&current_to=2026-08-08%2010:05:00&route=/v1/predict&dimensions=client_id,route"
+```
+
+| Environment variable  | Default                    | Meaning                              |
+| --------------------- | -------------------------- | ------------------------------------ |
+| `RC_CURRENT_MINUTES`  | 5                          | Current window length (min)          |
+| `RC_BASELINE_OFFSET`  | 30                         | Baseline window ends 30 min ago      |
+| `RC_BASELINE_MINUTES` | 30                         | Baseline window length (min)         |
+| `RC_MIN_EVENTS`       | 20                         | Min events to produce a report       |
+| `RC_TOP_K`            | 5                          | Features / segments in the report    |
+| `RC_DIMENSIONS`       | `client_id,route,model_version` | Segment dimensions               |
+
+---
+
 # Dashboard Usage
 
 The big-screen dashboard (`http://localhost:8501`) polls ClickHouse every 10 seconds and updates live:
@@ -249,6 +275,7 @@ The big-screen dashboard (`http://localhost:8501`) polls ClickHouse every 10 sec
 * **Traffic trend** — requests per minute (15 min). **Latency trend** — P50/P99 over time.
 * **Distributions** — current vs baseline histograms of prediction and confidence. Clear separation = behavior change.
 * **Drift events** — most recent drifted signals with timestamps.
+* **Root cause view** — toggle in the top bar: an explainable summary, ranked feature impacts (PSI / mean shift / effect size / confidence), and segment contributions with an export-JSON button.
 * Hover the ⓘ icon on any panel for a plain-language explanation; the top bar toggles 中文/EN.
 
 Want to see drift in action? See [TESTING.md](TESTING.md#drift-demo).

@@ -53,6 +53,7 @@ docker compose -f docker-compose.release.yml up -d
 | ----------- | ---------------------------------- |
 | 监控大屏    | http://localhost:8501              |
 | 推理网关    | http://localhost:8080/v1/predict   |
+| 根因分析    | http://localhost:8100              |
 | ClickHouse  | http://localhost:8123（`default` / `vera`） |
 
 发布版不包含任何模拟/演示服务——大屏只展示真实流量。接入你的模型服务（见[接入真实 AI 模型](#接入真实-ai-模型)），让推理流量改走 `http://<主机>:8080/v1/predict`。
@@ -81,6 +82,7 @@ irm https://raw.githubusercontent.com/sufengx/vera/main/install.ps1 | iex
 | --------------------------------------- | -------------------- |
 | `ghcr.io/sufengx/vera/gateway`          | Go 推理网关          |
 | `ghcr.io/sufengx/vera/detector`         | 漂移检测引擎         |
+| `ghcr.io/sufengx/vera/rootcause`        | 根因分析引擎         |
 | `ghcr.io/sufengx/vera/dashboard`        | React 监控大屏       |
 
 ---
@@ -105,6 +107,7 @@ docker compose -f infra/docker-compose/docker-compose.yml up --build
 * `loadgen` - 流量生成器（仅开发用）
 * `clickhouse` - 事件存储
 * `detector` - 漂移检测引擎
+* `rootcause` - 根因分析引擎，地址 http://localhost:8100
 * `dashboard` - 监控大屏，地址 http://localhost:8501
 
 `model-mock` 与 `loadgen` 是开发辅助工具，用来在没有真实模型时本地生成合成流量评估 Vera，不属于上面的生产部署。
@@ -219,7 +222,7 @@ ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXX
 
 ## 7. 目前能做什么、不能做什么
 
-开箱即检测 `prediction`（PSI）、`confidence`（KS）、`latency_ms`（KS）的分布漂移，配实时大屏与 webhook 告警。暂不支持：SDK 应用级信号、embedding 漂移、根因分析、prompt/工具调用追踪——见[路线图](README.zh-CN.md#路线图)。
+开箱即检测 `prediction`（PSI）、`confidence`（KS）、`latency_ms`（KS）的分布漂移，用根因分析解释漂移来源（top-K 特征与子群贡献），并配实时大屏与 webhook 告警。暂不支持：SDK 应用级信号、embedding 漂移、prompt/工具调用追踪——见[路线图](README.zh-CN.md#路线图)。
 
 ---
 
@@ -239,6 +242,29 @@ ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXX
 
 ---
 
+# 根因分析
+
+检测到漂移时，根因引擎（`services/rootcause`）对比当前窗口与基准窗口，按影响度量（`PSI + 0.35 × Cohen's d`）对每个特征排序，再定位漂移集中的子群（客户端、路由、模型版本……）。每个特征带置信度评分，报告以 JSON 提供，大屏渲染并支持导出。
+
+```bash
+# 某模型最近 5 分钟（默认窗口）的 top-K 特征与子群
+curl -s "http://localhost:8100/api/v1/rootcause?model=ctr&top_k=5"
+
+# 显式时间段、按路由过滤、指定维度
+curl -s "http://localhost:8100/api/v1/rootcause?current_from=2026-08-08%2010:00:00&current_to=2026-08-08%2010:05:00&route=/v1/predict&dimensions=client_id,route"
+```
+
+| 环境变量               | 默认值                        | 含义                           |
+| ---------------------- | ----------------------------- | ------------------------------ |
+| `RC_CURRENT_MINUTES`   | 5                             | 当前窗口长度（分钟）           |
+| `RC_BASELINE_OFFSET`   | 30                            | 基准窗口结束于 30 分钟前       |
+| `RC_BASELINE_MINUTES`  | 30                            | 基准窗口长度（分钟）           |
+| `RC_MIN_EVENTS`        | 20                            | 最小事件数，不足不产出报告     |
+| `RC_TOP_K`             | 5                             | 报告中的特征 / 子群数量        |
+| `RC_DIMENSIONS`        | `client_id,route,model_version` | 子群分析维度               |
+
+---
+
 # 大屏使用说明
 
 监控大屏（http://localhost:8501）每 10 秒轮询一次 ClickHouse，实时刷新：
@@ -249,6 +275,7 @@ ALERT_WEBHOOK_URL=https://hooks.slack.com/services/T000/B000/XXX
 * **请求量趋势** —— 每分钟请求数（15 分钟）。**延迟趋势** —— P50/P99 随时间变化。
 * **分布对比** —— prediction / confidence 的当前窗口 vs 基准窗口直方图，明显错开即行为改变。
 * **异常事件** —— 最近触发的漂移事件。
+* **根因视图** —— 顶栏切换：可解释摘要、按影响排序的特征（PSI / 均值位移 / 效应量 / 置信度）、子群贡献，支持导出 JSON。
 * 任意面板悬停 ⓘ 可看通俗解释；顶栏可切换中英文。
 
 想看漂移实际发生？见 [TESTING.zh-CN.md](TESTING.zh-CN.md#漂移演示)。

@@ -15,6 +15,13 @@ services:
       DETECTOR_SCAN_INTERVAL: "30"
       DETECTOR_MIN_EVENTS: "20"
 
+  rootcause:
+    environment:
+      RC_CURRENT_MINUTES: "1"
+      RC_BASELINE_OFFSET: "1"
+      RC_BASELINE_MINUTES: "1"
+      RC_MIN_EVENTS: "20"
+
   dashboard:
     environment:
       DETECTOR_CURRENT_MINUTES: "1"

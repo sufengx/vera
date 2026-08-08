@@ -41,7 +41,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m py_compile tools/simulator/mock_model.py tools/simulator/send_events.py services/detector/*.py
+      - run: python -m py_compile tools/simulator/mock_model.py tools/simulator/send_events.py services/detector/*.py services/rootcause/*.py
 
   test-detector:
     name: Unit Tests — Detector
@@ -57,6 +57,20 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - run: pytest tests -q
 
+  test-rootcause:
+    name: Unit Tests — Root Cause
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/rootcause
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests -q
+
   build-docker:
     name: Build Docker Images
     runs-on: ubuntu-latest
@@ -64,6 +78,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t vera/gateway:ci services/gateway
       - run: docker build -t vera/detector:ci services/detector
+      - run: docker build -t vera/rootcause:ci services/rootcause
       - run: docker build -t vera/dashboard:ci services/dashboard
 
   integration:
@@ -93,6 +108,51 @@ jobs:
           COUNT=$(curl -s -u default:vera "http://localhost:8123/?query=SELECT+count(*)+FROM+vera.drift_results+FORMAT+CSV")
           echo "drift_results=$COUNT"
           [ "$COUNT" -gt 0 ] || { echo "集成测试失败：无漂移结果"; exit 1; }
+      - name: 注入已知漂移的合成事件（固定时间窗口，确定性断言）
+        run: |
+          python - <<'EOF'
+          import json
+          import urllib.request
+          import uuid
+
+          def rows(conf, lat, n, t, client):
+              return [{
+                  "event_id": str(uuid.uuid4()), "timestamp": t,
+                  "request_id": str(uuid.uuid4()), "model_name": "ci-probe",
+                  "model_version": "v1", "route": "/v1/predict", "client_id": client,
+                  "input_summary_hash": "x", "prediction": "0.5", "confidence": conf,
+                  "latency_ms": lat, "server_hostname": "ci", "container_id": "ci",
+                  "sampling_flag": True, "privacy_mask_level": "full",
+              } for _ in range(n)]
+
+          # 基准窗口 confidence≈0.6；当前窗口 confidence≈0.9（漂移），
+          # latency 仅在 ci-b 子群翻 4 倍（子群漂移）
+          base = rows(0.6, 10.0, 60, "2026-01-02 03:00:00", "ci-a")
+          cur = rows(0.9, 10.0, 60, "2026-01-02 03:12:00", "ci-a") + \
+                rows(0.9, 40.0, 60, "2026-01-02 03:12:00", "ci-b")
+          body = ("\n".join(json.dumps(r) for r in base + cur) + "\n").encode()  # JSONEachRow 按行分隔
+          req = urllib.request.Request(
+              "http://localhost:8123/?query=INSERT+INTO+vera.events+FORMAT+JSONEachRow",
+              data=body, method="POST",
+              headers={"Authorization": "Basic ZGVmYXVsdDp2ZXJh"},
+          )
+          urllib.request.urlopen(req)
+          print("inserted", len(base) + len(cur))
+          EOF
+      - name: 断言根因定位 top 特征为 confidence、子群为 ci-b
+        run: |
+          REPORT=$(curl -s "http://localhost:8100/api/v1/rootcause?current_from=2026-01-02%2003:10:00&current_to=2026-01-02%2003:20:00&model=ci-probe")
+          echo "$REPORT" | python -c "
+          import json
+          import sys
+          r = json.load(sys.stdin)
+          assert r['status'] == 'ok', r
+          feats = [f['name'] for f in r['features']]
+          assert feats and feats[0] == 'confidence', feats
+          segs = [s['value'] for s in r['segments']]
+          assert 'ci-b' in segs[:3], segs
+          print('root cause verified:', feats, segs)
+          "
       - name: 清理环境
         if: always()
         run: docker compose -f infra/docker-compose/docker-compose.yml down -v
@@ -100,7 +160,7 @@ jobs:
   publish-images:
     name: Build & Push to GHCR
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [lint-gateway, test-gateway, lint-python, test-detector]
+    needs: [lint-gateway, test-gateway, lint-python, test-detector, test-rootcause]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,6 +172,8 @@ jobs:
             context: services/gateway
           - image: detector
             context: services/detector
+          - image: rootcause
+            context: services/rootcause
           - image: dashboard
             context: services/dashboard
     steps:

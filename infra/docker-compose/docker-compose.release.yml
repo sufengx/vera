@@ -57,6 +57,23 @@ services:
     depends_on:
       - clickhouse
 
+  rootcause:
+    image: ghcr.io/sufengx/vera/rootcause:${VERA_IMAGE_TAG:-latest}
+    ports:
+      - "8100:8000"
+    environment:
+      CLICKHOUSE_ADDR: http://clickhouse:8123
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: vera
+      CLICKHOUSE_DB: vera
+      RC_CURRENT_MINUTES: ${RC_CURRENT_MINUTES:-5}
+      RC_BASELINE_OFFSET: ${RC_BASELINE_OFFSET:-30}
+      RC_BASELINE_MINUTES: ${RC_BASELINE_MINUTES:-30}
+      RC_MIN_EVENTS: ${RC_MIN_EVENTS:-20}
+      RC_TOP_K: ${RC_TOP_K:-5}
+    depends_on:
+      - clickhouse
+
   dashboard:
     image: ghcr.io/sufengx/vera/dashboard:${VERA_IMAGE_TAG:-latest}
     ports:
@@ -71,6 +88,7 @@ services:
       DETECTOR_BASELINE_MINUTES: ${DETECTOR_BASELINE_MINUTES:-30}
     depends_on:
       - clickhouse
+      - rootcause
 
 volumes:
   ch-data:

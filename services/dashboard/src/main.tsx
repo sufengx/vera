@@ -78,6 +78,29 @@ const I18N: Record<string, Record<string, string>> = {
     helpDistConf: "模型置信度分布。突然变得过于自信或犹豫也是异常信号。",
     helpLatency: "P50=一半请求在此时间内完成，P99=99% 的请求在此时间内完成。P99 升高说明系统在变慢。",
     helpEvents: "最近触发的漂移事件。",
+    viewOverview: "总览",
+    viewRootcause: "根因分析",
+    rcTitle: "根因分析报告",
+    rcSummary: "可解释摘要",
+    rcFeatures: "特征贡献 Top-",
+    rcSegments: "子群贡献 Top-",
+    rcExport: "导出 JSON",
+    rcNoData: "等待更多事件…",
+    rcInsufficient: "当前窗口事件不足，暂无法分析",
+    rcCurrentWin: "当前窗口",
+    rcBaselineWin: "基准窗口",
+    rcEvents: "事件",
+    rcPsi: "PSI",
+    rcDeltaMean: "Δ均值",
+    rcEffect: "效应量",
+    rcShare: "占比",
+    rcContrib: "贡献",
+    rcConfidence: "置信度",
+    rcUp: "上升",
+    rcDown: "下降",
+    rcSpread: "变宽",
+    rcNew: "新增",
+    rcScore: "贡献分",
   },
   en: {
     title: "Vera AI Observability & Drift Detection",
@@ -114,6 +137,29 @@ const I18N: Record<string, Record<string, string>> = {
     helpDistConf: "Model confidence distribution. Sudden over-confidence or hesitation is a warning sign.",
     helpLatency: "P50 = half of requests complete within this time; P99 = 99% do. A rising P99 means the system is slowing.",
     helpEvents: "Recently fired drift events.",
+    viewOverview: "Overview",
+    viewRootcause: "Root Cause",
+    rcTitle: "Root Cause Report",
+    rcSummary: "Summary",
+    rcFeatures: "Feature Contribution Top-",
+    rcSegments: "Segment Contribution Top-",
+    rcExport: "Export JSON",
+    rcNoData: "Waiting for more events…",
+    rcInsufficient: "Not enough events in the current window",
+    rcCurrentWin: "Current window",
+    rcBaselineWin: "Baseline window",
+    rcEvents: "events",
+    rcPsi: "PSI",
+    rcDeltaMean: "Δmean",
+    rcEffect: "effect",
+    rcShare: "share",
+    rcContrib: "contribution",
+    rcConfidence: "confidence",
+    rcUp: "up",
+    rcDown: "down",
+    rcSpread: "spread",
+    rcNew: "new",
+    rcScore: "score",
   },
 };
 
@@ -209,6 +255,46 @@ async function fetchDashboardData(): Promise<DashData> {
     distPred: distRows(predCur, predBase),
     distConf: distRows(confCur, confBase),
   };
+}
+
+type RCFeature = {
+  name: string; psi: number; ks_pvalue: number; delta_mean: number;
+  delta_std: number; effect_size: number; direction: "up" | "down" | "spread";
+  score: number; confidence: number;
+};
+type RCSegment = {
+  dimension: string; value: string; feature: string; n_current: number;
+  share: number; delta_mean: number; contribution: number; deviation: number;
+  score: number; confidence: number; new: boolean;
+};
+type RCReport = {
+  status: "ok" | "insufficient_data";
+  window: { current: [string, string]; baseline: [string, string] };
+  n_baseline: number; n_current: number;
+  features: RCFeature[]; segments: RCSegment[];
+  summary: { zh: string; en: string };
+};
+
+function useRootCauseData(active: boolean, intervalMs: number): RCReport | null {
+  const [data, setData] = useState<RCReport | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const resp = await fetch("/rc/api/v1/rootcause");
+        if (!resp.ok) throw new Error(`rootcause ${resp.status}`);
+        const d = (await resp.json()) as RCReport;
+        if (alive) setData(d);
+      } catch {
+        /* 保留上次数据，下轮重试 */
+      }
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [active, intervalMs]);
+  return data;
 }
 
 function useDashboardData(intervalMs: number): DashData | null {
@@ -516,6 +602,28 @@ function RightColumn({ t, data }: { t: (k: string) => string; data: DashData }) 
 }
 
 /* ── 顶栏 ──────────────────────────────────────────────── */
+function ViewToggle({ view, setView, t }: {
+  view: "overview" | "rootcause"; setView: (v: "overview" | "rootcause") => void; t: (k: string) => string;
+}) {
+  const btn = (label: string, value: "overview" | "rootcause") => (
+    <button
+      key={value}
+      onClick={() => setView(value)}
+      className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+        view === value ? "bg-violet-500/20 text-violet-200" : "text-slate-500 hover:text-slate-300"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex items-center rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
+      {btn(t("viewOverview"), "overview")}
+      {btn(t("viewRootcause"), "rootcause")}
+    </div>
+  );
+}
+
 function LangToggle({ lang, setLang }: { lang: string; setLang: (v: "zh" | "en") => void }) {
   const btn = (label: string, value: "zh" | "en") => (
     <button
@@ -536,8 +644,9 @@ function LangToggle({ lang, setLang }: { lang: string; setLang: (v: "zh" | "en")
   );
 }
 
-function TopBar({ t, lang, setLang, data }: {
-  t: (k: string) => string; lang: string; setLang: (v: "zh" | "en") => void; data: DashData;
+function TopBar({ t, lang, setLang, view, setView, data }: {
+  t: (k: string) => string; lang: string; setLang: (v: "zh" | "en") => void;
+  view: "overview" | "rootcause"; setView: (v: "overview" | "rootcause") => void; data: DashData;
 }) {
   const nDrifted = data.signals.filter((s) => s.drifted).length;
   let banner: ReactNode;
@@ -591,16 +700,191 @@ function TopBar({ t, lang, setLang, data }: {
       <div className="flex flex-1 justify-center">{banner}</div>
       <div className="flex w-[26%] items-center justify-end gap-4">
         <Clock lang={lang} />
+        <ViewToggle view={view} setView={setView} t={t} />
         <LangToggle lang={lang} setLang={setLang} />
       </div>
     </header>
   );
 }
 
+/* ── 根因分析视图 ──────────────────────────────────────── */
+const sign = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+const dirLabel = (d: "up" | "down" | "spread", t: (k: string) => string) =>
+  d === "up" ? t("rcUp") : d === "down" ? t("rcDown") : t("rcSpread");
+
+function RcFeatureRow({ f, max, t }: { f: RCFeature; max: number; t: (k: string) => string }) {
+  const width = Math.max((f.score / Math.max(max, 1e-9)) * 100, 2);
+  return (
+    <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-slate-100">{f.name}</span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-2.5 py-0.5 text-[0.65rem] font-semibold ${
+            f.direction === "spread" ? "bg-slate-500/15 text-slate-400" : "bg-vera-red/15 text-vera-red"
+          }`}>{dirLabel(f.direction, t)}</span>
+          <span className="rounded-full bg-violet-500/15 px-2.5 py-0.5 text-[0.65rem] font-semibold text-violet-300">
+            {(f.confidence * 100).toFixed(0)}%
+          </span>
+        </div>
+      </div>
+      <div className="mt-2 flex justify-between font-mono text-xs text-slate-400">
+        <span>{t("rcPsi")} {f.psi.toFixed(2)}</span>
+        <span>{t("rcDeltaMean")} {sign(f.delta_mean)}</span>
+        <span>{t("rcEffect")} {f.effect_size.toFixed(2)}</span>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400 transition-all duration-500" style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function RcSegmentRow({ s, max, t }: { s: RCSegment; max: number; t: (k: string) => string }) {
+  const width = Math.max((s.score / Math.max(max, 1e-9)) * 100, 2);
+  return (
+    <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-sm font-semibold text-slate-100">
+          {s.dimension}={s.value}
+          {s.new && (
+            <span className="ml-2 rounded-full bg-cyan-500/15 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-cyan-300">
+              {t("rcNew")}
+            </span>
+          )}
+        </span>
+        <span className="font-mono text-xs text-slate-400">{(s.share * 100).toFixed(0)}%</span>
+      </div>
+      <div className="mt-1.5 flex justify-between font-mono text-xs text-slate-400">
+        <span>{s.feature}</span>
+        <span>{t("rcContrib")} {(s.contribution * 100).toFixed(0)}%</span>
+        <span>{t("rcConfidence")} {(s.confidence * 100).toFixed(0)}%</span>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 transition-all duration-500" style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function RootCauseView({ t, lang, rc, signals }: { t: (k: string) => string; lang: "zh" | "en"; rc: RCReport | null; signals: Signal[] }) {
+  if (!rc) {
+    return (
+      <main className="z-10 flex flex-1 items-center justify-center">
+        <EmptyState text={t("rcNoData")} />
+      </main>
+    );
+  }
+  if (rc.status !== "ok") {
+    return (
+      <main className="z-10 flex flex-1 items-center justify-center">
+        <div className="text-center text-sm text-slate-500">{t("rcInsufficient")}</div>
+      </main>
+    );
+  }
+  const fmtTs = (s: string) => fmtLocal(s, false).slice(11, 16);
+  const exportJson = () => {
+    const blob = new Blob([JSON.stringify(rc, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    const d = new Date();
+    a.href = URL.createObjectURL(blob);
+    a.download = `vera-rootcause-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const maxF = Math.max(...rc.features.map((f) => f.score), 1e-9);
+  const maxS = Math.max(...rc.segments.map((s) => s.score), 1e-9);
+  return (
+    <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
+      <div className="flex min-h-0 flex-col gap-5">
+        <GlassCard className="min-h-0 flex-1 flex flex-col">
+          <PanelTitle title={`${t("rcFeatures")}${Math.min(rc.features.length, 5)}`} />
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {rc.features.length ? (
+              rc.features.slice(0, 5).map((f) => <RcFeatureRow key={f.name} f={f} max={maxF} t={t} />)
+            ) : (
+              <EmptyState text={t("rcInsufficient")} />
+            )}
+          </div>
+        </GlassCard>
+        <GlassCard>
+          <PanelTitle title={t("signalAnalysis")} />
+          <div className="flex flex-col gap-2">
+            {signals.length ? (
+              signals.map((s) => (
+                <div key={s.metric} className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3.5 py-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className={`h-2 w-2 rounded-full ${s.drifted ? "bg-vera-red shadow-[0_0_8px_rgba(239,68,68,0.5)]" : "bg-vera-green shadow-[0_0_8px_rgba(16,185,129,0.5)]"}`} />
+                    <span className="text-xs font-semibold text-slate-200">{s.metric}</span>
+                  </div>
+                  <span className="font-mono text-xs text-slate-500">{s.score.toFixed(4)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="flex h-16 items-center justify-center text-xs text-slate-600">{t("waitScan")}</div>
+            )}
+          </div>
+        </GlassCard>
+      </div>
+      <div className="grid min-h-0 grid-rows-[3fr_2fr] gap-5">
+        <GlassCard className="min-h-0 flex flex-col">
+          <PanelTitle title={t("rcSummary")} />
+          <p className="min-h-0 flex-1 overflow-y-auto text-sm leading-relaxed text-slate-200">
+            {rc.summary[lang]}
+          </p>
+        </GlassCard>
+        <GlassCard className="flex flex-col justify-between">
+          <div className="space-y-2.5 font-mono text-xs text-slate-400">
+            <div className="flex justify-between">
+              <span>{t("rcCurrentWin")}</span>
+              <span className="text-slate-200">{fmtTs(rc.window.current[0])} ~ {fmtTs(rc.window.current[1])}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>{t("rcBaselineWin")}</span>
+              <span className="text-slate-200">{fmtTs(rc.window.baseline[0])} ~ {fmtTs(rc.window.baseline[1])}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>{t("rcEvents")}</span>
+              <span className="text-slate-200">{rc.n_current.toLocaleString()} / {rc.n_baseline.toLocaleString()}</span>
+            </div>
+          </div>
+          <button
+            onClick={exportJson}
+            className="self-end rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-violet-400/40 hover:bg-violet-500/10"
+          >
+            ⬇ {t("rcExport")}
+          </button>
+        </GlassCard>
+      </div>
+      <div className="flex min-h-0 flex-col gap-5">
+        <GlassCard className="min-h-0 flex-1 flex flex-col">
+          <PanelTitle title={`${t("rcSegments")}${Math.min(rc.segments.length, 5)}`} />
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {rc.segments.length ? (
+              rc.segments.slice(0, 5).map((s) => (
+                <RcSegmentRow key={`${s.dimension}-${s.value}-${s.feature}`} s={s} max={maxS} t={t} />
+              ))
+            ) : (
+              <EmptyState text={t("rcNoData")} />
+            )}
+          </div>
+        </GlassCard>
+        <GlassCard>
+          <PanelTitle title={`${t("rcTitle")} · ${t("rcScore")}`} />
+          <div className="text-xs leading-relaxed text-slate-500">
+            {lang === "zh" ? "贡献分越高，说明该特征/子群越能解释漂移；置信度 = 样本充分度 × 差异强度。" : "Higher score = the feature/segment explains more of the drift; confidence = sample sufficiency × shift magnitude."}
+          </div>
+        </GlassCard>
+      </div>
+    </main>
+  );
+}
+
 /* ── 主组件 ────────────────────────────────────────────── */
 function App() {
   const [lang, setLang] = useState<"zh" | "en">("zh");
+  const [view, setView] = useState<"overview" | "rootcause">("overview");
   const data = useDashboardData(POLL_MS);
+  const rc = useRootCauseData(view === "rootcause", 30000);
   const t = (k: string) => I18N[lang][k] ?? k;
 
   if (!data) {
@@ -625,13 +909,17 @@ function App() {
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-violet-600/[0.08] blur-3xl" />
       </div>
 
-      <TopBar t={t} lang={lang} setLang={setLang} data={data} />
+      <TopBar t={t} lang={lang} setLang={setLang} view={view} setView={setView} data={data} />
 
-      <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
-        <LeftColumn t={t} data={data} />
-        <MiddleColumn t={t} data={data} />
-        <RightColumn t={t} data={data} />
-      </main>
+      {view === "rootcause" ? (
+        <RootCauseView t={t} lang={lang} rc={rc} signals={data.signals} />
+      ) : (
+        <main className="z-10 grid min-h-0 flex-1 grid-cols-[3fr_4fr_3fr] gap-5 px-6 pb-6">
+          <LeftColumn t={t} data={data} />
+          <MiddleColumn t={t} data={data} />
+          <RightColumn t={t} data={data} />
+        </main>
+      )}
     </div>
   );
 }
