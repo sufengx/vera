@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
+  Area, AreaChart, CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import "./index.css";
@@ -231,8 +231,13 @@ function distRows(cur: any[], base: any[]): DistRow[] {
     if (i < 0) i = 0;
     b[i]++;
   }
+  // 归一化为占比，两个窗口时长不同也能直接对比
+  const cTotal = c.reduce((s, n) => s + n, 0);
+  const bTotal = b.reduce((s, n) => s + n, 0);
   return Array.from({ length: bins }, (_, i) => ({
-    label: ((i + 0.5) / bins).toFixed(2), current: c[i], baseline: b[i],
+    label: ((i + 0.5) / bins).toFixed(2),
+    current: cTotal ? +((c[i] / cTotal) * 100).toFixed(1) : 0,
+    baseline: bTotal ? +((b[i] / bTotal) * 100).toFixed(1) : 0,
   }));
 }
 
@@ -503,14 +508,14 @@ function DistChart({ rows, t }: { rows: DistRow[]; t: (k: string) => string }) {
       <div className="mb-1 flex justify-end">{legend}</div>
       <div className="h-[calc(100%-2.2rem)]">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={rows} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+          <LineChart data={rows} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
             <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} minTickGap={50} />
-            <YAxis tick={TICK} axisLine={false} tickLine={false} width={40} />
-            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-            <Bar dataKey="current" fill={PURPLE} fillOpacity={0.65} maxBarSize={14} />
-            <Line type="monotone" dataKey="baseline" stroke={GRAY_LINE} strokeWidth={2} dot={false} />
-          </BarChart>
+            <YAxis tick={{ ...TICK, formatter: (v: number) => `${v}%` }} axisLine={false} tickLine={false} width={44} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ stroke: "rgba(255,255,255,0.15)" }} formatter={(v) => `${v}%`} />
+            <Line type="monotone" dataKey="current" name={t("currentWin")} stroke={PURPLE} strokeWidth={2.5} dot={false} />
+            <Line type="monotone" dataKey="baseline" name={t("baselineWin")} stroke={GRAY_LINE} strokeWidth={2} dot={false} />
+          </LineChart>
         </ResponsiveContainer>
       </div>
     </>
